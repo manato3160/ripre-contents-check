@@ -144,6 +144,22 @@ export async function POST(request: NextRequest) {
         }
 
         // DIFYの生の出力を保存
+        // rawOutputの処理を改善：textプロパティを優先的に使用
+        let rawOutput: string;
+        if (jsonData.text && typeof jsonData.text === 'string') {
+          // jsonDataにtextプロパティがある場合はそれを使用
+          rawOutput = jsonData.text;
+        } else if (response.answer && typeof response.answer === 'string') {
+          // response.answerが文字列の場合はそれを使用
+          rawOutput = response.answer;
+        } else if (typeof jsonData === 'string') {
+          // jsonData自体が文字列の場合はそれを使用
+          rawOutput = jsonData;
+        } else {
+          // それ以外の場合は適切に文字列化
+          rawOutput = JSON.stringify(jsonData, null, 2);
+        }
+
         analysisResult = {
           score: typeof jsonData.score === 'number' ? jsonData.score : 75,
           issues: Array.isArray(jsonData.issues) ? jsonData.issues : [
@@ -161,7 +177,7 @@ export async function POST(request: NextRequest) {
             tone: "標準"
           },
           summary: jsonData.summary || "DIFY APIによる分析が完了しました。",
-          rawOutput: response.answer || (typeof jsonData === 'string' ? jsonData : JSON.stringify(jsonData, null, 2))
+          rawOutput: rawOutput
         };
 
         conversationId = response.conversation_id || response.workflow_run_id || 'dify-success';

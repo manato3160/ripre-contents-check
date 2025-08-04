@@ -39,6 +39,9 @@ interface DifyError {
 export class DifyClient {
   private apiUrl: string;
   private apiKey: string;
+  private defaultTimeout: number = 900000; // 15分
+  private maxRetries: number = 3;
+  private retryDelay: number = 5000; // 5秒
 
   constructor() {
     this.apiUrl = process.env.DIFY_API_URL || '';
@@ -49,11 +52,78 @@ export class DifyClient {
     }
   }
 
+  private async sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private async fetchWithTimeout(
+    url: string, 
+    options: RequestInit, 
+    timeout: number = this.defaultTimeout
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`Request timeout after ${timeout / 1000} seconds`);
+      }
+      throw error;
+    }
+  }
+
+  private async retryRequest<T>(
+    requestFn: () => Promise<T>,
+    maxRetries: number = this.maxRetries,
+    delay: number = this.retryDelay
+  ): Promise<T> {
+    let lastError: Error;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`Attempt ${attempt}/${maxRetries}`);
+        return await requestFn();
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error('Unknown error');
+        console.error(`Attempt ${attempt} failed:`, lastError.message);
+
+        if (attempt === maxRetries) {
+          break;
+        }
+
+        // 特定のエラーの場合はリトライしない
+        if (lastError.message.includes('400') || 
+            lastError.message.includes('401') || 
+            lastError.message.includes('403') ||
+            lastError.message.includes('invalid_param')) {
+          console.log('Non-retryable error detected, skipping retries');
+          break;
+        }
+
+        console.log(`Waiting ${delay / 1000} seconds before retry...`);
+        await this.sleep(delay);
+        
+        // 指数バックオフ: 次回の待機時間を2倍にする
+        delay *= 2;
+      }
+    }
+
+    throw lastError!;
+  }
+
   async runWorkflow(
     inputs: Record<string, any>,
     user: string = 'default-user'
   ): Promise<DifyWorkflowResponse> {
-    try {
+    return await this.retryRequest(async () => {
       const endpoint = `${this.apiUrl}/workflows/run`;
 
       console.log('Making request to DIFY Workflow API:', {
@@ -69,7 +139,7 @@ export class DifyClient {
         user,
       };
 
-      const response = await fetch(endpoint, {
+      const response = await this.fetchWithTimeout(endpoint, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
@@ -97,10 +167,7 @@ export class DifyClient {
       const data = await response.json();
       console.log('DIFY Workflow API success response:', data);
       return data;
-    } catch (error) {
-      console.error('DIFY Workflow API request failed:', error);
-      throw error;
-    }
+    });
   }
 
   async chatCompletion(

@@ -27,6 +27,10 @@ import {
 } from "lucide-react"
 import { HistoryStats } from "@/components/history-stats"
 import { HistoryFilter } from "@/components/history-filter"
+import { AnalysisReport } from "@/components/analysis-report"
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
 
 interface AnalysisResult {
   status: "pending" | "processing" | "completed" | "error"
@@ -180,27 +184,35 @@ export default function RipreDashboard() {
     return true
   })
 
+  const [currentStep, setCurrentStep] = useState("")
+  const [estimatedTime, setEstimatedTime] = useState("")
+
   const handleAnalyze = async () => {
     setIsAnalyzing(true)
     setProgress(0)
+    setCurrentStep("分析を開始しています...")
+    setEstimatedTime("最大15分程度お待ちください")
 
     try {
-      // Progress simulation
+      // Progress simulation with more realistic timing
       const steps = [
-        { step: "DIFY APIに接続中...", progress: 20 },
-        { step: "公式情報を解析中...", progress: 40 },
-        { step: "製品プロファイル生成中...", progress: 60 },
-        { step: "コンプライアンスチェック実行中...", progress: 80 },
-        { step: "最終レポート生成中...", progress: 100 },
+        { step: "DIFY APIに接続中...", progress: 10, time: "接続中..." },
+        { step: "告知文を解析中...", progress: 25, time: "約2-3分" },
+        { step: "公式情報を取得中...", progress: 40, time: "約3-5分" },
+        { step: "製品プロファイル生成中...", progress: 60, time: "約5-8分" },
+        { step: "コンプライアンスチェック実行中...", progress: 80, time: "約8-12分" },
+        { step: "最終レポート生成中...", progress: 95, time: "約12-15分" },
       ]
 
-      // Show progress
+      // Show initial progress
       for (let i = 0; i < steps.length - 1; i++) {
+        setCurrentStep(steps[i].step)
+        setEstimatedTime(steps[i].time)
         setProgress(steps[i].progress)
-        await new Promise((resolve) => setTimeout(resolve, 800))
+        await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
-      // Call DIFY API
+      // Call DIFY API with extended timeout
       const officialUrls = [
         formData.officialUrl1,
         formData.officialUrl2,
@@ -209,71 +221,142 @@ export default function RipreDashboard() {
         formData.officialUrl5,
       ].filter(url => url.trim())
 
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          documents: formData.documents,
-          officialUrls,
-          productInfo: null
-        }),
-      })
+      setCurrentStep("広告審査AIが厳正にチェック中...")
+      setEstimatedTime("処理時間が長い場合があります")
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        console.error('API Error:', errorData)
-        throw new Error(errorData.error || `API request failed with status ${response.status}`)
-      }
+      // Create AbortController for timeout
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => {
+        controller.abort()
+      }, 1200000) // 20分タイムアウト
 
-      const data = await response.json()
-      console.log('API Response:', data)
-      setProgress(100)
+      try {
+        const response = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            documents: formData.documents,
+            officialUrls,
+            productInfo: null
+          }),
+          signal: controller.signal
+        })
 
-      if (data.success) {
-        const newResult = data.result
-        setAnalysisResult(newResult)
+        clearTimeout(timeoutId)
 
-        // Add to history
-        const newHistoryItem = {
-          id: `RPR-${new Date().getFullYear()}-${String(historyData.length + 1).padStart(3, "0")}`,
-          date: new Date().toISOString(),
-          title: formData.documents.slice(0, 30) + "...",
-          score: newResult.score,
-          status: "completed" as const,
-          issues: newResult.issues?.length || 0,
-          productName: newResult.productProfile?.name || "未特定",
-          category: newResult.productProfile?.category || "未分類",
-          urls: officialUrls,
-          summary: newResult.summary || (
-            newResult.score >= 80
-              ? "軽微な修正が推奨されます。"
-              : newResult.score >= 60
-                ? "複数の修正が必要です。"
-                : "重大な問題があります。"
-          ),
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+          console.error('API Error:', errorData)
+          throw new Error(errorData.error || `API request failed with status ${response.status}`)
         }
 
-        setHistoryData((prev) => [newHistoryItem, ...prev])
+        const data = await response.json()
+        console.log('API Response:', data)
 
-        // 分析完了後、自動的に分析結果タブに切り替え
-        setActiveTab("results")
-      } else {
-        throw new Error(data.error || 'Analysis failed')
+        setCurrentStep("分析完了")
+        setProgress(100)
+
+        if (data.success) {
+          const newResult = data.result
+          setAnalysisResult(newResult)
+
+          // Add to history
+          const newHistoryItem = {
+            id: `RPR-${new Date().getFullYear()}-${String(historyData.length + 1).padStart(3, "0")}`,
+            date: new Date().toISOString(),
+            title: formData.documents.slice(0, 30) + "...",
+            score: newResult.score,
+            status: "completed" as const,
+            issues: newResult.issues?.length || 0,
+            productName: newResult.productProfile?.name || "未特定",
+            category: newResult.productProfile?.category || "未分類",
+            urls: officialUrls,
+            summary: newResult.summary || (
+              newResult.score >= 80
+                ? "軽微な修正が推奨されます。"
+                : newResult.score >= 60
+                  ? "複数の修正が必要です。"
+                  : "重大な問題があります。"
+            ),
+          }
+
+          setHistoryData((prev) => [newHistoryItem, ...prev])
+
+          // 分析完了後、自動的に分析結果タブに切り替え
+          setActiveTab("results")
+        } else {
+          throw new Error(data.error || 'Analysis failed')
+        }
+      } catch (fetchError) {
+        clearTimeout(timeoutId)
+
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          throw new Error('分析がタイムアウトしました（20分経過）。処理時間が長すぎる可能性があります。')
+        }
+        throw fetchError
       }
+
     } catch (error) {
       console.error('Analysis error:', error)
 
-      // Show error result
+      let errorMessage = "分析中にエラーが発生しました"
+      let errorType: "error" | "warning" = "error"
+      let score = 0
+
+      if (error instanceof Error) {
+        if (error.message.includes('timeout') || error.message.includes('タイムアウト')) {
+          errorMessage = "分析処理がタイムアウトしました。Difyワークフローの処理時間が長すぎる可能性があります。"
+          errorType = "warning"
+          score = 50
+        } else if (error.message.includes('fetch failed') || error.message.includes('network')) {
+          errorMessage = "ネットワーク接続エラーが発生しました。インターネット接続を確認してください。"
+          errorType = "warning"
+          score = 45
+        } else if (error.message.includes('DIFY API unavailable')) {
+          errorMessage = "DIFY APIが利用できません。サーバーの状態を確認してください。"
+          errorType = "warning"
+          score = 40
+        } else {
+          errorMessage = `${error.message}`
+        }
+      }
+
+      // Show error result with more helpful information
       const errorResult = {
         status: "error" as const,
-        score: 0,
+        score,
         issues: [
           {
-            type: "error" as const,
-            message: `分析中にエラーが発生しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            type: errorType,
+            message: errorMessage,
             section: "システム",
+          },
+          {
+            type: "info" as const,
+            message: "以下の対処方法をお試しください：",
+            section: "対処方法",
+          },
+          {
+            type: "info" as const,
+            message: "1. ネットワーク接続を確認してください",
+            section: "対処方法",
+          },
+          {
+            type: "info" as const,
+            message: "2. しばらく時間をおいて再度お試しください",
+            section: "対処方法",
+          },
+          {
+            type: "info" as const,
+            message: "3. 入力テキストを短くして再試行してください",
+            section: "対処方法",
+          },
+          {
+            type: "info" as const,
+            message: "4. 問題が継続する場合は管理者にお問い合わせください",
+            section: "対処方法",
           },
         ],
         productProfile: {
@@ -283,6 +366,19 @@ export default function RipreDashboard() {
           components: ["エラー"],
           tone: "エラー",
         },
+        rawOutput: `エラー詳細:
+${errorMessage}
+
+入力データ:
+- 告知文: ${formData.documents.slice(0, 200)}${formData.documents.length > 200 ? '...' : ''}
+- 公式URL数: ${officialUrls.length}件
+
+発生時刻: ${new Date().toLocaleString('ja-JP')}
+
+このエラーが継続する場合は、以下の情報と共に管理者にお問い合わせください：
+- エラーメッセージ: ${errorMessage}
+- 発生時刻: ${new Date().toISOString()}
+- ブラウザ: ${navigator.userAgent}`
       }
 
       setAnalysisResult(errorResult)
@@ -290,6 +386,8 @@ export default function RipreDashboard() {
       setActiveTab("results")
     } finally {
       setIsAnalyzing(false)
+      setCurrentStep("")
+      setEstimatedTime("")
     }
   }
 
@@ -319,39 +417,32 @@ export default function RipreDashboard() {
         </div>
 
         <div className="relative z-10 flex flex-col items-center">
-          {/* 円形プログレス */}
-          <div className="relative mb-12">
-            <div className="w-32 h-32 relative">
-              {/* 背景の円 */}
-              <div className="absolute inset-0 rounded-full border-4 border-gray-800"></div>
-
-              {/* プログレスの円 */}
-              <div
-                className="absolute inset-0 rounded-full"
-                style={{
-                  background: `conic-gradient(from 0deg, #ec4899 ${progress * 3.6}deg, #374151 ${progress * 3.6}deg)`,
-                  borderRadius: '50%',
-                  transform: 'rotate(-90deg)',
-                  transition: 'all 0.3s ease'
-                }}
-              ></div>
-
-              {/* 中央の白い円 */}
-              <div className="absolute inset-4 bg-white rounded-full flex items-center justify-center">
-                <div className="w-16 h-16 bg-gradient-to-br from-pink-400 via-cyan-400 to-purple-400 rounded-full opacity-80"></div>
-              </div>
-            </div>
+          {/* 分析中アニメーション */}
+          <div className="relative mb-12 flex h-48 w-48 items-center justify-center">
+            {/* 波紋アニメーション */}
+            <div className="absolute h-full w-full rounded-full bg-slate-800/50 animate-ripple"></div>
+            <div className="absolute h-full w-full rounded-full bg-slate-800/50 animate-ripple [animation-delay:1s]"></div>
+            <div className="absolute h-full w-full rounded-full bg-slate-800/50 animate-ripple [animation-delay:2s]"></div>
+            {/* 中央のアイコン */}
+            <Shield className="relative z-10 h-16 w-16 text-cyan-400 drop-shadow-[0_0_10px_rgba(56,189,248,0.5)]" />
           </div>
 
           {/* メインテキスト */}
           <div className="text-center mb-12">
             <h1 className="text-4xl font-bold mb-4">
               <span className="bg-gradient-to-r from-pink-400 via-cyan-400 to-purple-400 bg-clip-text text-transparent">
-                AI分析中
+                AI審査中
               </span>
             </h1>
-            <p className="text-xl text-gray-400 mb-2">告知文を精密にチェックしています...</p>
-            <p className="text-gray-500">最大15分程度お待ちください</p>
+            <p className="text-xl text-gray-400 mb-2">
+              {currentStep || "告知文を精密にチェックしています..."}
+            </p>
+            <p className="text-gray-500">
+              {estimatedTime || "最大15分程度お待ちください"}
+            </p>
+            <div className="mt-4 text-sm text-gray-600">
+              進捗: {progress}%
+            </div>
           </div>
 
           {/* 分析ステップ */}
@@ -598,23 +689,155 @@ export default function RipreDashboard() {
 
           <TabsContent value="results" className="space-y-6">
             {analysisResult ? (
-              <Card className="border-slate-200">
-                <CardHeader className="bg-slate-900 text-white">
-                  <CardTitle>DIFY分析結果</CardTitle>
-                  <CardDescription className="text-slate-300">
-                    AIによるコンプライアンス分析レポート
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="p-6">
-                  <div className="bg-white rounded-lg p-6 border border-slate-200">
-                    <pre className="whitespace-pre-wrap text-sm text-slate-800 leading-relaxed font-sans">
-                      {(analysisResult.rawOutput || analysisResult.summary || "分析結果を取得できませんでした。")
-                        .replace(/\\n/g, '\n')
-                      }
-                    </pre>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="space-y-6">
+                {/* 総合スコアカード */}
+                <Card className="border-slate-200">
+                  <CardHeader className="bg-gradient-to-r from-slate-900 to-slate-800 text-white">
+                    <CardTitle className="flex items-center justify-between">
+                      <span className="flex items-center">
+                        <BarChart3 className="h-5 w-5 mr-2" />
+                        総合評価
+                      </span>
+                      <Badge
+                        variant={analysisResult.score >= 80 ? "default" : analysisResult.score >= 60 ? "secondary" : "destructive"}
+                        className={`text-lg px-4 py-2 ${analysisResult.score >= 80 ? "bg-green-600" :
+                          analysisResult.score >= 60 ? "bg-yellow-600" : "bg-red-600"
+                          }`}
+                      >
+                        {analysisResult.score}/100
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <div className="space-y-4">
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-slate-700">コンプライアンススコア</span>
+                          <span className="text-sm text-slate-600">{analysisResult.score}%</span>
+                        </div>
+                        <Progress value={analysisResult.score} className="h-3" />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                        <div className="text-center p-4 bg-slate-50 rounded-lg">
+                          <div className="text-2xl font-bold text-slate-900">{analysisResult.issues?.length || 0}</div>
+                          <div className="text-sm text-slate-600">指摘事項</div>
+                        </div>
+                        <div className="text-center p-4 bg-slate-50 rounded-lg">
+                          <div className="text-2xl font-bold text-green-600">
+                            {analysisResult.issues?.filter(issue => issue.type === 'info').length || 0}
+                          </div>
+                          <div className="text-sm text-slate-600">情報</div>
+                        </div>
+                        <div className="text-center p-4 bg-slate-50 rounded-lg">
+                          <div className="text-2xl font-bold text-red-600">
+                            {analysisResult.issues?.filter(issue => issue.type === 'error').length || 0}
+                          </div>
+                          <div className="text-sm text-slate-600">エラー</div>
+                        </div>
+                      </div>
+
+                      {analysisResult.summary && (
+                        <div className="mt-6 p-4 bg-blue-50 border-l-4 border-blue-400 rounded-r-lg">
+                          <h4 className="font-medium text-blue-900 mb-2">分析サマリー</h4>
+                          <p className="text-blue-800 text-sm leading-relaxed">{analysisResult.summary}</p>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* 詳細レポート（rawOutput）*/}
+                {analysisResult.rawOutput && (
+                  <Card className="border-slate-200">
+                    <CardHeader className="bg-slate-600 text-white">
+                      <CardTitle className="flex items-center justify-between">
+                        <span className="flex items-center">
+                          <FileText className="h-5 w-5 mr-2" />
+                          詳細分析レポート
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-white hover:text-slate-200"
+                          onClick={() => {
+                            const element = document.createElement('a');
+                            const file = new Blob([analysisResult.rawOutput || ''], { type: 'text/plain' });
+                            element.href = URL.createObjectURL(file);
+                            element.download = `ripre-analysis-${new Date().toISOString().split('T')[0]}.txt`;
+                            document.body.appendChild(element);
+                            element.click();
+                            document.body.removeChild(element);
+                          }}
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          ダウンロード
+                        </Button>
+                      </CardTitle>
+                      <CardDescription className="text-slate-300">
+                        AI分析エンジンからの完全なレポート
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <div className="max-h-200 overflow-y-auto">
+                        <AnalysisReport content={analysisResult.rawOutput || analysisResult.summary || "分析結果を取得できませんでした。"} />
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* アクションボタン */}
+                <Card className="border-slate-200">
+                  <CardContent className="p-6">
+                    <div className="flex flex-wrap gap-4">
+                      <Button
+                        className="bg-slate-900 hover:bg-slate-800 text-white"
+                        onClick={() => {
+                          const reportData = {
+                            score: analysisResult.score,
+                            summary: analysisResult.summary,
+                            productProfile: analysisResult.productProfile,
+                            issues: analysisResult.issues,
+                            timestamp: new Date().toISOString(),
+                            rawOutput: analysisResult.rawOutput
+                          };
+                          const element = document.createElement('a');
+                          const file = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
+                          element.href = URL.createObjectURL(file);
+                          element.download = `ripre-analysis-${new Date().toISOString().split('T')[0]}.json`;
+                          document.body.appendChild(element);
+                          element.click();
+                          document.body.removeChild(element);
+                        }}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        完全レポートをダウンロード
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setAnalysisResult(null)
+                          setProgress(0)
+                          setActiveTab("check")
+                        }}
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        新しい分析を実行
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          navigator.clipboard.writeText(analysisResult.rawOutput || analysisResult.summary || '')
+                          // TODO: トースト通知を追加
+                        }}
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        結果をコピー
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             ) : (
               <Card className="border-slate-200">
                 <CardContent className="p-12 text-center">
