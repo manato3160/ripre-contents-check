@@ -31,6 +31,7 @@ import { AnalysisReport } from "@/components/analysis-report"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
+import { Toaster } from "sonner"
 
 interface AnalysisResult {
   status: "pending" | "processing" | "completed" | "error"
@@ -59,58 +60,92 @@ export default function RipreDashboard() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [progress, setProgress] = useState(0)
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
-  const [historyData, setHistoryData] = useState([
-    {
-      id: "RPR-2024-001",
-      date: "2024-01-15T10:30:00Z",
-      title: "美容サプリメント XYZ 告知文",
-      score: 85,
-      status: "completed" as const,
-      issues: 3,
-      productName: "美容サプリメント XYZ",
-      category: "機能性表示食品",
-      urls: ["https://example.com/product1", "https://example.com/product2"],
-      summary: "薬機法に関する軽微な修正が必要ですが、全体的に適切な表現です。",
-    },
-    {
-      id: "RPR-2024-002",
-      date: "2024-01-14T15:45:00Z",
-      title: "健康食品 ABC プロモーション",
-      score: 92,
-      status: "completed" as const,
-      issues: 1,
-      productName: "健康食品 ABC",
-      category: "栄養補助食品",
-      urls: ["https://example.com/abc"],
-      summary: "コンプライアンス要件を満たしており、問題ありません。",
-    },
-    {
-      id: "RPR-2024-003",
-      date: "2024-01-13T09:15:00Z",
-      title: "化粧品 DEF 新商品告知",
-      score: 67,
-      status: "completed" as const,
-      issues: 5,
-      productName: "化粧品 DEF",
-      category: "化粧品",
-      urls: ["https://example.com/def1", "https://example.com/def2"],
-      summary: "効果効能の表現に複数の問題があり、修正が必要です。",
-    },
-    {
-      id: "RPR-2024-004",
-      date: "2024-01-12T14:20:00Z",
-      title: "ダイエットサプリ GHI キャンペーン",
-      score: 45,
-      status: "completed" as const,
-      issues: 8,
-      productName: "ダイエットサプリ GHI",
-      category: "機能性表示食品",
-      urls: ["https://example.com/ghi"],
-      summary: "重大なコンプライアンス違反の可能性があります。大幅な修正が必要です。",
-    },
-  ])
+  // 履歴データの初期化とローカルストレージからの読み込み
+  const [historyData, setHistoryData] = useState(() => {
+    // サーバーサイドレンダリング対応
+    if (typeof window === 'undefined') {
+      return [];
+    }
+    
+    try {
+      const savedHistory = localStorage.getItem('ripre-analysis-history');
+      if (savedHistory) {
+        return JSON.parse(savedHistory);
+      }
+    } catch (error) {
+      console.error('履歴データの読み込みに失敗しました:', error);
+    }
+    
+    // デフォルトのサンプルデータ
+    return [
+      {
+        id: "RPR-2024-001",
+        date: "2024-01-15T10:30:00Z",
+        title: "美容サプリメント XYZ 告知文",
+        score: 85,
+        status: "completed" as const,
+        issues: 3,
+        productName: "美容サプリメント XYZ",
+        category: "機能性表示食品",
+        urls: ["https://example.com/product1", "https://example.com/product2"],
+        summary: "薬機法に関する軽微な修正が必要ですが、全体的に適切な表現です。",
+      },
+      {
+        id: "RPR-2024-002",
+        date: "2024-01-14T15:45:00Z",
+        title: "健康食品 ABC プロモーション",
+        score: 92,
+        status: "completed" as const,
+        issues: 1,
+        productName: "健康食品 ABC",
+        category: "栄養補助食品",
+        urls: ["https://example.com/abc"],
+        summary: "コンプライアンス要件を満たしており、問題ありません。",
+      },
+      {
+        id: "RPR-2024-003",
+        date: "2024-01-13T09:15:00Z",
+        title: "化粧品 DEF 新商品告知",
+        score: 67,
+        status: "completed" as const,
+        issues: 5,
+        productName: "化粧品 DEF",
+        category: "化粧品",
+        urls: ["https://example.com/def1", "https://example.com/def2"],
+        summary: "効果効能の表現に複数の問題があり、修正が必要です。",
+      },
+      {
+        id: "RPR-2024-004",
+        date: "2024-01-12T14:20:00Z",
+        title: "ダイエットサプリ GHI キャンペーン",
+        score: 45,
+        status: "completed" as const,
+        issues: 8,
+        productName: "ダイエットサプリ GHI",
+        category: "機能性表示食品",
+        urls: ["https://example.com/ghi"],
+        summary: "重大なコンプライアンス違反の可能性があります。大幅な修正が必要です。",
+      },
+    ];
+  })
 
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<string | null>(null)
+
+  // 履歴データをローカルストレージに保存する関数
+  const saveHistoryToStorage = (historyData: any[]) => {
+    try {
+      localStorage.setItem('ripre-analysis-history', JSON.stringify(historyData));
+    } catch (error) {
+      console.error('履歴データの保存に失敗しました:', error);
+    }
+  };
+
+  // 履歴データが変更されたときにローカルストレージに保存
+  useEffect(() => {
+    if (typeof window !== 'undefined' && historyData.length > 0) {
+      saveHistoryToStorage(historyData);
+    }
+  }, [historyData]);
 
   const [formData, setFormData] = useState({
     documents: "",
@@ -262,7 +297,7 @@ export default function RipreDashboard() {
           const newResult = data.result
           setAnalysisResult(newResult)
 
-          // Add to history
+          // Add to history with complete analysis data
           const newHistoryItem = {
             id: `RPR-${new Date().getFullYear()}-${String(historyData.length + 1).padStart(3, "0")}`,
             date: new Date().toISOString(),
@@ -280,6 +315,13 @@ export default function RipreDashboard() {
                   ? "複数の修正が必要です。"
                   : "重大な問題があります。"
             ),
+            // 完全な分析結果を保存
+            fullAnalysisResult: {
+              ...newResult,
+              originalDocuments: formData.documents,
+              analysisTimestamp: new Date().toISOString(),
+              officialUrls: officialUrls
+            }
           }
 
           setHistoryData((prev) => [newHistoryItem, ...prev])
@@ -404,14 +446,12 @@ ${errorMessage}
     ]
 
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center px-6 relative overflow-hidden">
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-6 relative overflow-hidden">
         {/* 背景のグリッドパターン */}
-        <div className="absolute inset-0 opacity-10">
+        <div className="absolute inset-0 opacity-50">
           <div className="absolute inset-0" style={{
-            backgroundImage: `
-              linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
-            `,
+            backgroundImage: `linear-gradient(rgba(0,0,0,0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,0,0,0.05) 1px, transparent 1px)`,
             backgroundSize: '50px 50px'
           }}></div>
         </div>
@@ -420,37 +460,28 @@ ${errorMessage}
           {/* 分析中アニメーション */}
           <div className="relative mb-12 flex h-48 w-48 items-center justify-center">
             {/* 波紋アニメーション */}
-            <div className="absolute h-full w-full rounded-full bg-slate-800/50 animate-ripple"></div>
-            <div className="absolute h-full w-full rounded-full bg-slate-800/50 animate-ripple [animation-delay:1s]"></div>
-            <div className="absolute h-full w-full rounded-full bg-slate-800/50 animate-ripple [animation-delay:2s]"></div>
+            <div className="absolute h-full w-full rounded-full bg-white animate-ripple"></div>
+            <div className="absolute h-full w-full rounded-full bg-white animate-ripple [animation-delay:1s]"></div>
+            <div className="absolute h-full w-full rounded-full bg-white animate-ripple [animation-delay:2s]"></div>
             {/* 中央のアイコン */}
-            <Shield className="relative z-10 h-16 w-16 text-cyan-400 drop-shadow-[0_0_10px_rgba(56,189,248,0.5)]" />
+            <Shield className="relative z-10 h-16 w-16 text-slate-800 drop-shadow-[0_0_15px_rgba(0,0,0,0.1)]" />
           </div>
 
           {/* メインテキスト */}
           <div className="text-center mb-12">
-            <h1 className="text-4xl font-bold mb-4">
-              <span className="bg-gradient-to-r from-pink-400 via-cyan-400 to-purple-400 bg-clip-text text-transparent">
-                AI審査中
-              </span>
+            <h1 className="text-4xl font-bold mb-4 text-slate-900">
+              <span className="bg-gradient-to-r from-pink-500 via-cyan-500 to-purple-500 bg-clip-text text-transparent">AI分析中</span>
             </h1>
-            <p className="text-xl text-gray-400 mb-2">
-              {currentStep || "告知文を精密にチェックしています..."}
-            </p>
-            <p className="text-gray-500">
-              {estimatedTime || "最大15分程度お待ちください"}
-            </p>
-            <div className="mt-4 text-sm text-gray-600">
-              進捗: {progress}%
-            </div>
+            <p className="text-xl text-slate-600 mb-2">告知文を精密にチェックしています...</p>
+            <p className="text-slate-500">最大15分程度お待ちください</p>
           </div>
 
           {/* 分析ステップ */}
           <div className="space-y-6 w-full max-w-md">
             {analysisSteps.map((step, index) => (
               <div key={index} className="flex items-center space-x-4">
-                <div className={`w-3 h-3 rounded-full ${step.active ? step.dotColor : 'bg-gray-700'} transition-colors duration-500`}></div>
-                <span className={`text-lg ${step.active ? step.color : 'text-gray-600'} transition-colors duration-500`}>
+                <div className={`w-3 h-3 rounded-full ${step.active ? step.dotColor : 'bg-slate-300'} transition-colors duration-500`}></div>
+                <span className={`text-lg ${step.active ? step.color : 'text-slate-500'} transition-colors duration-500`}>
                   {step.label}
                 </span>
               </div>
@@ -463,6 +494,7 @@ ${errorMessage}
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <Toaster richColors position="top-center" />
       {/* Header */}
       <header className="bg-slate-900 text-white shadow-lg">
         <div className="container mx-auto px-6 py-4">
@@ -990,15 +1022,62 @@ ${errorMessage}
                             <CardTitle className="text-slate-800">アクション</CardTitle>
                           </CardHeader>
                           <CardContent className="p-6 space-y-3">
-                            <Button className="w-full bg-transparent" variant="outline">
+                            <Button 
+                              className="w-full bg-transparent" 
+                              variant="outline"
+                              onClick={() => {
+                                if (selectedItem.fullAnalysisResult) {
+                                  const reportData = {
+                                    ...selectedItem.fullAnalysisResult,
+                                    historyId: selectedItem.id,
+                                    analysisDate: selectedItem.date
+                                  };
+                                  const element = document.createElement('a');
+                                  const file = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
+                                  element.href = URL.createObjectURL(file);
+                                  element.download = `ripre-analysis-${selectedItem.id}.json`;
+                                  document.body.appendChild(element);
+                                  element.click();
+                                  document.body.removeChild(element);
+                                }
+                              }}
+                            >
                               <Download className="h-4 w-4 mr-2" />
                               詳細レポートをダウンロード
                             </Button>
-                            <Button className="w-full bg-transparent" variant="outline">
-                              <RefreshCw className="h-4 w-4 mr-2" />
-                              再分析を実行
+                            <Button 
+                              className="w-full bg-transparent" 
+                              variant="outline"
+                              onClick={() => {
+                                if (selectedItem.fullAnalysisResult) {
+                                  // 履歴の分析結果を現在の結果として設定
+                                  setAnalysisResult(selectedItem.fullAnalysisResult);
+                                  setActiveTab("results");
+                                }
+                              }}
+                            >
+                              <BarChart3 className="h-4 w-4 mr-2" />
+                              詳細結果を表示
                             </Button>
-                            <Button className="w-full bg-transparent" variant="outline">
+                            <Button 
+                              className="w-full bg-transparent" 
+                              variant="outline"
+                              onClick={() => {
+                                if (selectedItem.fullAnalysisResult?.originalDocuments) {
+                                  // 原稿を復元してチェックタブに移動
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    documents: selectedItem.fullAnalysisResult.originalDocuments,
+                                    officialUrl1: selectedItem.fullAnalysisResult.officialUrls?.[0] || "",
+                                    officialUrl2: selectedItem.fullAnalysisResult.officialUrls?.[1] || "",
+                                    officialUrl3: selectedItem.fullAnalysisResult.officialUrls?.[2] || "",
+                                    officialUrl4: selectedItem.fullAnalysisResult.officialUrls?.[3] || "",
+                                    officialUrl5: selectedItem.fullAnalysisResult.officialUrls?.[4] || "",
+                                  }));
+                                  setActiveTab("check");
+                                }
+                              }}
+                            >
                               <FileText className="h-4 w-4 mr-2" />
                               原稿を複製して新規チェック
                             </Button>
