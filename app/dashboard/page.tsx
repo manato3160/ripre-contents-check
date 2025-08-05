@@ -1,8 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useSession, signOut } from "next-auth/react"
-import { useRouter } from "next/navigation"
+import * as React from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
@@ -11,27 +10,56 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
 import {
   FileText,
   Globe,
   Upload,
-  CheckCircle,
-  AlertTriangle,
   Clock,
   Shield,
   BarChart3,
   Settings,
   Download,
   RefreshCw,
+  Star,
+  AlertTriangle,
+  Bot,
+  User,
+  GitCompareArrows,
 } from "lucide-react"
 import { HistoryStats } from "@/components/history-stats"
 import { HistoryFilter } from "@/components/history-filter"
 import { AnalysisReport } from "@/components/analysis-report"
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
 import { Toaster } from "sonner"
+import { cn, getAiIssueCountFromReport } from "@/lib/utils"
+
+// --- ここから追加 ---
+interface HistoryItem {
+  id: string;
+  created_at: string;
+  title: string;
+  score: number;
+  issues: any[];
+  summary: string;
+  user_rating: string | null;
+  human_issue_count: number | null;
+  raw_output: string;
+}
+// --- ここまで追加 ---
 
 interface AnalysisResult {
   status: "pending" | "processing" | "completed" | "error"
@@ -53,83 +81,45 @@ interface AnalysisResult {
 }
 
 export default function RipreDashboard() {
-  // 一時的に認証を無効化
-  // const { data: session, status } = useSession()
-  // const router = useRouter()
   const [activeTab, setActiveTab] = useState("check")
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [progress, setProgress] = useState(0)
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
-  // 履歴データの初期化とローカルストレージからの読み込み
-  const [historyData, setHistoryData] = useState(() => {
-    // サーバーサイドレンダリング対応
-    if (typeof window === 'undefined') {
-      return [];
-    }
-    
-    try {
-      const savedHistory = localStorage.getItem('ripre-analysis-history');
-      if (savedHistory) {
-        return JSON.parse(savedHistory);
-      }
-    } catch (error) {
-      console.error('履歴データの読み込みに失敗しました:', error);
-    }
-    
-    // デフォルトのサンプルデータ
-    return [
-      {
-        id: "RPR-2024-001",
-        date: "2024-01-15T10:30:00Z",
-        title: "美容サプリメント XYZ 告知文",
-        score: 85,
-        status: "completed" as const,
-        issues: 3,
-        productName: "美容サプリメント XYZ",
-        category: "機能性表示食品",
-        urls: ["https://example.com/product1", "https://example.com/product2"],
-        summary: "薬機法に関する軽微な修正が必要ですが、全体的に適切な表現です。",
-      },
-      {
-        id: "RPR-2024-002",
-        date: "2024-01-14T15:45:00Z",
-        title: "健康食品 ABC プロモーション",
-        score: 92,
-        status: "completed" as const,
-        issues: 1,
-        productName: "健康食品 ABC",
-        category: "栄養補助食品",
-        urls: ["https://example.com/abc"],
-        summary: "コンプライアンス要件を満たしており、問題ありません。",
-      },
-      {
-        id: "RPR-2024-003",
-        date: "2024-01-13T09:15:00Z",
-        title: "化粧品 DEF 新商品告知",
-        score: 67,
-        status: "completed" as const,
-        issues: 5,
-        productName: "化粧品 DEF",
-        category: "化粧品",
-        urls: ["https://example.com/def1", "https://example.com/def2"],
-        summary: "効果効能の表現に複数の問題があり、修正が必要です。",
-      },
-      {
-        id: "RPR-2024-004",
-        date: "2024-01-12T14:20:00Z",
-        title: "ダイエットサプリ GHI キャンペーン",
-        score: 45,
-        status: "completed" as const,
-        issues: 8,
-        productName: "ダイエットサプリ GHI",
-        category: "機能性表示食品",
-        urls: ["https://example.com/ghi"],
-        summary: "重大なコンプライアンス違反の可能性があります。大幅な修正が必要です。",
-      },
-    ];
-  })
+
+  // --- 評価機能用のState ---
+  const [userRating, setUserRating] = useState<string | null>(null);
+  const [humanIssueCount, setHumanIssueCount] = useState<number | null>(null);
+  const [isRatingDialogOpen, setIsRatingDialogOpen] = useState(false);
+  const [selectedRatingInDialog, setSelectedRatingInDialog] = useState<string>('A');
+  const [humanIssueCountInDialog, setHumanIssueCountInDialog] = useState('');
+
+  // --- ここから修正 ---
+  // historyDataの初期値を空配列にする
+  const [historyData, setHistoryData] = useState<HistoryItem[]>([]);
+  // --- ここまで修正 ---
 
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<string | null>(null)
+  const [openHistoryId, setOpenHistoryId] = useState<string | null>(null)
+
+  // --- ここから追加 ---
+  // ページ読み込み時に履歴を取得する
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const response = await fetch('/api/history');
+        if (!response.ok) {
+          throw new Error('履歴の取得に失敗しました');
+        }
+        const data = await response.json();
+        setHistoryData(data);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    fetchHistory();
+  }, []);
+  // --- ここまで追加 ---
 
   // 履歴データをローカルストレージに保存する関数
   const saveHistoryToStorage = (historyData: any[]) => {
@@ -223,9 +213,14 @@ export default function RipreDashboard() {
   const [estimatedTime, setEstimatedTime] = useState("")
 
   const handleAnalyze = async () => {
+    // 新しい分析が開始されたら、前回のユーザー評価をリセット
+    setUserRating(null);
+    setHumanIssueCount(null);
+    setHumanIssueCountInDialog('');
+
     setIsAnalyzing(true)
     setProgress(0)
-    setCurrentStep("分析を開始しています...")
+    setCurrentStep("審査を開始しています...")
     setEstimatedTime("最大15分程度お待ちください")
 
     try {
@@ -290,7 +285,7 @@ export default function RipreDashboard() {
         const data = await response.json()
         console.log('API Response:', data)
 
-        setCurrentStep("分析完了")
+        setCurrentStep("審査完了")
         setProgress(100)
 
         if (data.success) {
@@ -328,6 +323,34 @@ export default function RipreDashboard() {
 
           // 分析完了後、自動的に分析結果タブに切り替え
           setActiveTab("results")
+
+          // --- ここから追加 ---
+          // 分析結果をデータベースに保存
+          const newHistoryItemForDB = {
+            title: formData.documents.slice(0, 50) + "...",
+            score: newResult.score,
+            issues: newResult.issues || [],
+            summary: newResult.summary || "サマリーなし",
+            user_rating: null,
+            human_issue_count: null,
+            raw_output: newResult.rawOutput || ""
+          };
+
+          try {
+            const response = await fetch('/api/history', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newHistoryItemForDB)
+            });
+            if (response.ok) {
+              const savedItem = await response.json();
+              // 履歴のリストを更新
+              setHistoryData(prev => [savedItem[0], ...prev]);
+            }
+          } catch (error) {
+            console.error("履歴の保存に失敗しました", error);
+          }
+          // --- ここまで追加 ---
         } else {
           throw new Error(data.error || 'Analysis failed')
         }
@@ -335,7 +358,7 @@ export default function RipreDashboard() {
         clearTimeout(timeoutId)
 
         if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-          throw new Error('分析がタイムアウトしました（20分経過）。処理時間が長すぎる可能性があります。')
+          throw new Error('審査がタイムアウトしました（20分経過）。処理時間が長すぎる可能性があります。')
         }
         throw fetchError
       }
@@ -343,13 +366,13 @@ export default function RipreDashboard() {
     } catch (error) {
       console.error('Analysis error:', error)
 
-      let errorMessage = "分析中にエラーが発生しました"
+      let errorMessage = "審査中にエラーが発生しました"
       let errorType: "error" | "warning" = "error"
       let score = 0
 
       if (error instanceof Error) {
         if (error.message.includes('timeout') || error.message.includes('タイムアウト')) {
-          errorMessage = "分析処理がタイムアウトしました。Difyワークフローの処理時間が長すぎる可能性があります。"
+          errorMessage = "審査処理がタイムアウトしました。Difyワークフローの処理時間が長すぎる可能性があります。"
           errorType = "warning"
           score = 50
         } else if (error.message.includes('fetch failed') || error.message.includes('network')) {
@@ -433,6 +456,31 @@ ${errorMessage}
     }
   }
 
+  const handleRatingSubmit = async () => {
+    const rating = selectedRatingInDialog;
+    const count = parseInt(humanIssueCountInDialog, 10);
+    const issueCount = isNaN(count) ? 0 : count;
+
+    setUserRating(rating);
+    setHumanIssueCount(issueCount);
+    setIsRatingDialogOpen(false);
+
+    // 最新の履歴項目を更新する
+    if (historyData.length > 0) {
+      const latestHistory = historyData[0];
+      const updatedHistory = { ...latestHistory, user_rating: rating, human_issue_count: issueCount };
+
+      // TODO: ここにSupabaseのUpdate APIを呼び出す処理を追加することも可能
+      // 今回はシンプルにするため、画面上の表示更新のみ
+      setHistoryData([updatedHistory, ...historyData.slice(1)]);
+    }
+  };
+
+  // AI指摘数をレポート内容から正確に計算
+  const aiIssueCount = useMemo(() => {
+    return getAiIssueCountFromReport(analysisResult?.rawOutput);
+  }, [analysisResult]);
+
   const handleFileUpload = (field: string, file: File | null) => {
     setFormData((prev) => ({ ...prev, [field]: file }))
   }
@@ -470,7 +518,7 @@ ${errorMessage}
           {/* メインテキスト */}
           <div className="text-center mb-12">
             <h1 className="text-4xl font-bold mb-4 text-slate-900">
-              <span className="bg-gradient-to-r from-pink-500 via-cyan-500 to-purple-500 bg-clip-text text-transparent">AI分析中</span>
+              <span className="bg-gradient-to-r from-pink-500 via-cyan-500 to-purple-500 bg-clip-text text-transparent">AI審査中</span>
             </h1>
             <p className="text-xl text-slate-600 mb-2">告知文を精密にチェックしています...</p>
             <p className="text-slate-500">最大15分程度お待ちください</p>
@@ -495,6 +543,7 @@ ${errorMessage}
   return (
     <div className="min-h-screen bg-slate-50">
       <Toaster richColors position="top-center" />
+
       {/* Header */}
       <header className="bg-slate-900 text-white shadow-lg">
         <div className="container mx-auto px-6 py-4">
@@ -521,6 +570,57 @@ ${errorMessage}
         </div>
       </header>
 
+      {/* 評価用ダイアログ */}
+      <Dialog open={isRatingDialogOpen} onOpenChange={setIsRatingDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>今回の審査結果はいかがでしたか？</DialogTitle>
+            <DialogDescription>
+              AIの審査精度向上のため、評価にご協力ください。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="human-issue-count">人間による指摘数</Label>
+              <Input
+                id="human-issue-count"
+                type="number"
+                placeholder="人間が指摘した件数を入力"
+                value={humanIssueCountInDialog}
+                onChange={(e) => setHumanIssueCountInDialog(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>精度の評価</Label>
+              <RadioGroup
+                defaultValue="A"
+                className="grid grid-cols-5 gap-2 pt-2"
+                value={selectedRatingInDialog}
+                onValueChange={setSelectedRatingInDialog}
+              >
+                {['A', 'B', 'C', 'D', 'E'].map((rating) => (
+                  <div key={rating} className="flex flex-col items-center space-y-2">
+                    <RadioGroupItem value={rating} id={`rating-${rating}`} className="sr-only" />
+                    <Label
+                      htmlFor={`rating-${rating}`}
+                      className={cn(
+                        "flex items-center justify-center rounded-md border-2 border-muted bg-popover p-4 w-16 h-16 text-2xl font-bold hover:bg-accent hover:text-accent-foreground cursor-pointer",
+                        selectedRatingInDialog === rating && "border-slate-900"
+                      )}
+                    >
+                      {rating}
+                    </Label>
+                  </div>
+                ))}
+              </RadioGroup>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleRatingSubmit}>評価を決定</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="container mx-auto px-6 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-3 bg-white border border-slate-200">
@@ -530,7 +630,7 @@ ${errorMessage}
             </TabsTrigger>
             <TabsTrigger value="results" className="data-[state=active]:bg-slate-900 data-[state=active]:text-white">
               <BarChart3 className="h-4 w-4 mr-2" />
-              分析結果
+              審査結果
             </TabsTrigger>
             <TabsTrigger value="history" className="data-[state=active]:bg-slate-900 data-[state=active]:text-white">
               <Clock className="h-4 w-4 mr-2" />
@@ -549,7 +649,7 @@ ${errorMessage}
                       チェック対象原稿
                     </CardTitle>
                     <CardDescription className="text-slate-300">
-                      分析したい広告・告知文を入力してください
+                    審査したい広告・告知文を入力してください
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="p-6">
@@ -631,7 +731,7 @@ ${errorMessage}
               <div className="space-y-6">
                 <Card className="border-slate-200">
                   <CardHeader className="bg-gradient-to-r from-slate-900 to-slate-800 text-white">
-                    <CardTitle>分析実行</CardTitle>
+                    <CardTitle>審査実行</CardTitle>
                     <CardDescription className="text-slate-300">AIによる高精度コンプライアンスチェック</CardDescription>
                   </CardHeader>
                   <CardContent className="p-6">
@@ -642,7 +742,7 @@ ${errorMessage}
                         disabled={!formData.documents.trim()}
                       >
                         <Shield className="h-4 w-4 mr-2" />
-                        分析開始
+                        審査開始
                       </Button>
                     )}
 
@@ -652,7 +752,7 @@ ${errorMessage}
                           <RefreshCw className="h-6 w-6 animate-spin text-slate-600" />
                         </div>
                         <Progress value={progress} className="w-full" />
-                        <p className="text-sm text-slate-600 text-center">分析中... {progress}%</p>
+                        <p className="text-sm text-slate-600 text-center">審査中... {progress}%</p>
                       </div>
                     )}
 
@@ -663,7 +763,7 @@ ${errorMessage}
                             variant={analysisResult.score >= 80 ? "default" : "destructive"}
                             className={analysisResult.score >= 80 ? "bg-green-600" : ""}
                           >
-                            スコア: {analysisResult.score}/100
+                            スコア: {userRating}
                           </Badge>
                           <Button
                             variant="outline"
@@ -674,13 +774,9 @@ ${errorMessage}
                             }}
                           >
                             <RefreshCw className="h-4 w-4 mr-2" />
-                            再分析
+                            再審査
                           </Button>
                         </div>
-                        <Button className="w-full bg-transparent" variant="outline">
-                          <Download className="h-4 w-4 mr-2" />
-                          レポートダウンロード
-                        </Button>
                       </div>
                     )}
                   </CardContent>
@@ -688,7 +784,7 @@ ${errorMessage}
 
                 <Card className="border-slate-200">
                   <CardHeader>
-                    <CardTitle className="text-slate-800">分析フロー</CardTitle>
+                    <CardTitle className="text-slate-800">審査フロー</CardTitle>
                   </CardHeader>
                   <CardContent className="p-6">
                     <div className="space-y-3 text-sm">
@@ -721,380 +817,197 @@ ${errorMessage}
 
           <TabsContent value="results" className="space-y-6">
             {analysisResult ? (
-              <div className="space-y-6">
-                {/* 総合スコアカード */}
-                <Card className="border-slate-200">
-                  <CardHeader className="bg-gradient-to-r from-slate-900 to-slate-800 text-white">
-                    <CardTitle className="flex items-center justify-between">
-                      <span className="flex items-center">
-                        <BarChart3 className="h-5 w-5 mr-2" />
+              <>
+                {/* 新しい「総合評価」カード */}
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between bg-slate-800 text-white rounded-t-lg">
+                    <div>
+                      <CardTitle className="flex items-center text-white">
+                        <Star className="h-5 w-5 mr-2" />
                         総合評価
-                      </span>
-                      <Badge
-                        variant={analysisResult.score >= 80 ? "default" : analysisResult.score >= 60 ? "secondary" : "destructive"}
-                        className={`text-lg px-4 py-2 ${analysisResult.score >= 80 ? "bg-green-600" :
-                          analysisResult.score >= 60 ? "bg-yellow-600" : "bg-red-600"
-                          }`}
-                      >
-                        {analysisResult.score}/100
-                      </Badge>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-6">
-                    <div className="space-y-4">
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-slate-700">コンプライアンススコア</span>
-                          <span className="text-sm text-slate-600">{analysisResult.score}%</span>
-                        </div>
-                        <Progress value={analysisResult.score} className="h-3" />
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                        <div className="text-center p-4 bg-slate-50 rounded-lg">
-                          <div className="text-2xl font-bold text-slate-900">{analysisResult.issues?.length || 0}</div>
-                          <div className="text-sm text-slate-600">指摘事項</div>
-                        </div>
-                        <div className="text-center p-4 bg-slate-50 rounded-lg">
-                          <div className="text-2xl font-bold text-green-600">
-                            {analysisResult.issues?.filter(issue => issue.type === 'info').length || 0}
-                          </div>
-                          <div className="text-sm text-slate-600">情報</div>
-                        </div>
-                        <div className="text-center p-4 bg-slate-50 rounded-lg">
-                          <div className="text-2xl font-bold text-red-600">
-                            {analysisResult.issues?.filter(issue => issue.type === 'error').length || 0}
-                          </div>
-                          <div className="text-sm text-slate-600">エラー</div>
-                        </div>
-                      </div>
-
-                      {analysisResult.summary && (
-                        <div className="mt-6 p-4 bg-blue-50 border-l-4 border-blue-400 rounded-r-lg">
-                          <h4 className="font-medium text-blue-900 mb-2">分析サマリー</h4>
-                          <p className="text-blue-800 text-sm leading-relaxed">{analysisResult.summary}</p>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* 詳細レポート（rawOutput）*/}
-                {analysisResult.rawOutput && (
-                  <Card className="border-slate-200">
-                    <CardHeader className="bg-slate-600 text-white">
-                      <CardTitle className="flex items-center justify-between">
-                        <span className="flex items-center">
-                          <FileText className="h-5 w-5 mr-2" />
-                          詳細分析レポート
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-white hover:text-slate-200"
-                          onClick={() => {
-                            const element = document.createElement('a');
-                            const file = new Blob([analysisResult.rawOutput || ''], { type: 'text/plain' });
-                            element.href = URL.createObjectURL(file);
-                            element.download = `ripre-analysis-${new Date().toISOString().split('T')[0]}.txt`;
-                            document.body.appendChild(element);
-                            element.click();
-                            document.body.removeChild(element);
-                          }}
-                        >
-                          <Download className="h-4 w-4 mr-2" />
-                          ダウンロード
-                        </Button>
                       </CardTitle>
                       <CardDescription className="text-slate-300">
-                        AI分析エンジンからの完全なレポート
+                        AIの審査結果に対する評価
                       </CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-6">
-                      <div className="max-h-200 overflow-y-auto">
-                        <AnalysisReport content={analysisResult.rawOutput || analysisResult.summary || "分析結果を取得できませんでした。"} />
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* アクションボタン */}
-                <Card className="border-slate-200">
+                    </div>
+                    <div>
+                      {userRating ? (
+                        <Badge variant="secondary" className="text-lg bg-green-600 text-white">
+                          精度：{userRating}
+                        </Badge>
+                      ) : (
+                        <Button onClick={() => setIsRatingDialogOpen(true)}>
+                          評価する
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
                   <CardContent className="p-6">
-                    <div className="flex flex-wrap gap-4">
-                      <Button
-                        className="bg-slate-900 hover:bg-slate-800 text-white"
-                        onClick={() => {
-                          const reportData = {
-                            score: analysisResult.score,
-                            summary: analysisResult.summary,
-                            productProfile: analysisResult.productProfile,
-                            issues: analysisResult.issues,
-                            timestamp: new Date().toISOString(),
-                            rawOutput: analysisResult.rawOutput
-                          };
-                          const element = document.createElement('a');
-                          const file = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
-                          element.href = URL.createObjectURL(file);
-                          element.download = `ripre-analysis-${new Date().toISOString().split('T')[0]}.json`;
-                          document.body.appendChild(element);
-                          element.click();
-                          document.body.removeChild(element);
-                        }}
-                      >
-                        <Download className="h-4 w-4 mr-2" />
-                        完全レポートをダウンロード
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setAnalysisResult(null)
-                          setProgress(0)
-                          setActiveTab("check")
-                        }}
-                      >
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        新しい分析を実行
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          navigator.clipboard.writeText(analysisResult.rawOutput || analysisResult.summary || '')
-                          // TODO: トースト通知を追加
-                        }}
-                      >
-                        <FileText className="h-4 w-4 mr-2" />
-                        結果をコピー
-                      </Button>
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                      <div>
+                        <p className="text-sm text-slate-500">AI指摘数</p>
+                        <p className="text-2xl font-bold">{aiIssueCount}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-500">人間による指摘数</p>
+                        <p className="text-2xl font-bold">{humanIssueCount ?? '-'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-500">差異</p>
+                        <p className="text-2xl font-bold text-destructive">
+                          {humanIssueCount !== null ? Math.abs(aiIssueCount - humanIssueCount) : '-'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <p className="text-sm text-slate-500 mb-1">コンプライアンススコア</p>
+                      <Progress value={analysisResult.score} />
+                    </div>
+                    <div className="mt-4 bg-blue-50 border border-blue-200 p-4 rounded-lg">
+                      <h4 className="font-semibold text-blue-900">審査サマリー</h4>
+                      <p className="text-sm text-blue-800">{analysisResult.summary}</p>
                     </div>
                   </CardContent>
                 </Card>
-              </div>
+
+                <Card className="border-slate-200">
+                  <CardHeader className="bg-slate-900 text-white">
+                    <CardTitle>詳細審査レポート</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <AnalysisReport content={analysisResult.rawOutput || analysisResult.summary || ""} />
+                  </CardContent>
+                </Card>
+              </>
             ) : (
-              <Card className="border-slate-200">
+              <Card>
                 <CardContent className="p-12 text-center">
                   <BarChart3 className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-slate-700 mb-2">分析結果がありません</h3>
-                  <p className="text-slate-500">まず「チェック実行」タブで分析を実行してください。</p>
+                  <h3 className="text-lg font-medium text-slate-600 mb-2">審査結果がありません</h3>
+                  <p className="text-slate-500 mb-4">チェック実行タブか審査を開始してください</p>
+                  <Button onClick={() => setActiveTab("check")} variant="outline">
+                    チェック実行に戻る
+                  </Button>
                 </CardContent>
               </Card>
             )}
           </TabsContent>
 
           <TabsContent value="history" className="space-y-6">
-            <HistoryStats historyData={historyData} />
-            <HistoryFilter onFilterChange={setHistoryFilters} />
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* History List */}
-              <div className="lg:col-span-2">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              <div className="lg:col-span-1">
+                <HistoryStats data={historyData} />
+                <div className="mt-6">
+                  <HistoryFilter filters={historyFilters} onFiltersChange={setHistoryFilters} />
+                </div>
+              </div>
+              <div className="lg:col-span-3">
                 <Card className="border-slate-200">
                   <CardHeader className="bg-slate-900 text-white">
                     <CardTitle className="flex items-center justify-between">
                       <span className="flex items-center">
                         <Clock className="h-5 w-5 mr-2" />
-                        分析履歴
+                        審査履歴
                       </span>
                       <Badge variant="secondary" className="bg-slate-700 text-slate-300">
                         {filteredHistoryData.length}件
                       </Badge>
                     </CardTitle>
-                    <CardDescription className="text-slate-300">
-                      過去に実行した分析結果を確認・比較できます
-                    </CardDescription>
                   </CardHeader>
                   <CardContent className="p-0">
-                    <div className="divide-y divide-slate-200">
-                      {filteredHistoryData.map((item) => (
-                        <div
-                          key={item.id}
-                          className={`p-6 hover:bg-slate-50 cursor-pointer transition-colors ${selectedHistoryItem === item.id ? "bg-slate-100 border-l-4 border-slate-900" : ""
-                            }`}
-                          onClick={() => setSelectedHistoryItem(selectedHistoryItem === item.id ? null : item.id)}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center space-x-3 mb-2">
-                                <h3 className="font-medium text-slate-900">{item.title}</h3>
-                                <Badge
-                                  variant={
-                                    item.score >= 80 ? "default" : item.score >= 60 ? "secondary" : "destructive"
-                                  }
-                                  className={
-                                    item.score >= 80 ? "bg-green-600" : item.score >= 60 ? "bg-yellow-600" : ""
-                                  }
-                                >
-                                  {item.score}点
-                                </Badge>
-                              </div>
-                              <div className="flex items-center space-x-4 text-sm text-slate-600 mb-2">
-                                <span className="flex items-center">
-                                  <FileText className="h-4 w-4 mr-1" />
-                                  {item.id}
-                                </span>
-                                <span>{new Date(item.date).toLocaleDateString("ja-JP")}</span>
-                                <span className="flex items-center">
-                                  <AlertTriangle className="h-4 w-4 mr-1" />
-                                  {item.issues}件の指摘
-                                </span>
-                              </div>
-                              <div className="flex items-center space-x-2 mb-2">
-                                <Badge variant="outline" className="text-xs">
-                                  {item.productName}
-                                </Badge>
-                                <Badge variant="outline" className="text-xs">
-                                  {item.category}
-                                </Badge>
-                              </div>
-                              <p className="text-sm text-slate-600">{item.summary}</p>
-                            </div>
-                            <div className="flex items-center space-x-2 ml-4">
-                              <Button variant="ghost" size="sm">
-                                <Download className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="sm">
-                                <RefreshCw className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <Accordion
+                      type="single"
+                      collapsible
+                      className="w-full"
+                      value={openHistoryId || ""}
+                      onValueChange={setOpenHistoryId}
+                    >
+                      {filteredHistoryData.map((item: any) => {
+                        const aiCount = getAiIssueCountFromReport(item.raw_output);
+                        const humanCount = typeof item.human_issue_count === 'number' ? item.human_issue_count : null;
+                        const difference = humanCount !== null ? Math.abs(aiCount - humanCount) : null;
+
+                        const ratingColors: { [key: string]: string } = {
+                          'A': 'bg-green-600',
+                          'B': 'bg-green-600',
+                          'C': 'bg-yellow-600',
+                          'D': 'bg-destructive',
+                          'E': 'bg-destructive',
+                        };
+
+                        return (
+                          <AccordionItem value={item.id} key={item.id} className="border-b-0">
+                            <Card className="mb-2 border-slate-200">
+                              <AccordionTrigger className="p-6 hover:no-underline">
+                                <div className="flex items-start justify-between w-full">
+                                  <div className="flex-1 text-left">
+                                    <div className="flex items-center space-x-3 mb-2">
+                                      <h3 className="font-medium text-slate-900">{item.title}</h3>
+                                      {item.user_rating ? (
+                                        <Badge className={cn("text-white", ratingColors[item.user_rating] || 'bg-secondary')}>
+                                          評価: {item.user_rating}
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline">未評価</Badge>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+                                      <span className="flex items-center">
+                                        <Clock className="h-4 w-4 mr-1.5" />
+                                        {new Date(item.created_at).toLocaleDateString("ja-JP")}
+                                      </span>
+                                      <span className="flex items-center">
+                                        <Bot className="h-4 w-4 mr-1.5" />
+                                        AI指摘数: {aiCount}
+                                      </span>
+                                      <span className="flex items-center">
+                                        <User className="h-4 w-4 mr-1.5" />
+                                        人間による指摘数: {humanCount ?? '-'}
+                                      </span>
+                                      <span className="flex items-center">
+                                        <GitCompareArrows className="h-4 w-4 mr-1.5" />
+                                        差異: {difference ?? '-'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center space-x-2 ml-4">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        alert('ダウンロード処理');
+                                      }}
+                                    >
+                                      <Download className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        alert('再審査処理');
+                                      }}
+                                    >
+                                      <RefreshCw className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <div className="p-6 pt-0">
+                                  <div className="border-t border-slate-200 pt-4">
+                                    <AnalysisReport content={item.raw_output || "レポート内容がありません。"} />
+                                  </div>
+                                </div>
+                              </AccordionContent>
+                            </Card>
+                          </AccordionItem>
+                        )
+                      })}
+                    </Accordion>
                   </CardContent>
                 </Card>
-              </div>
-
-              {/* Detail Panel */}
-              <div className="space-y-6">
-                {selectedHistoryItem ? (
-                  (() => {
-                    const selectedItem = historyData.find((item) => item.id === selectedHistoryItem)
-                    if (!selectedItem) return null
-
-                    return (
-                      <>
-                        <Card className="border-slate-200">
-                          <CardHeader className="bg-slate-800 text-white">
-                            <CardTitle>詳細情報</CardTitle>
-                            <CardDescription className="text-slate-300">{selectedItem.id}</CardDescription>
-                          </CardHeader>
-                          <CardContent className="p-6 space-y-4">
-                            <div>
-                              <Label className="text-slate-700 font-medium">分析日時</Label>
-                              <p className="text-slate-900">{new Date(selectedItem.date).toLocaleString("ja-JP")}</p>
-                            </div>
-                            <div>
-                              <Label className="text-slate-700 font-medium">総合スコア</Label>
-                              <div className="flex items-center space-x-2 mt-1">
-                                <Progress value={selectedItem.score} className="flex-1" />
-                                <span className="text-lg font-bold text-slate-900">{selectedItem.score}</span>
-                              </div>
-                            </div>
-                            <div>
-                              <Label className="text-slate-700 font-medium">製品情報</Label>
-                              <div className="space-y-2 mt-2">
-                                <div className="flex justify-between">
-                                  <span className="text-sm text-slate-600">製品名:</span>
-                                  <span className="text-sm font-medium">{selectedItem.productName}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-sm text-slate-600">カテゴリ:</span>
-                                  <Badge variant="outline" className="text-xs">
-                                    {selectedItem.category}
-                                  </Badge>
-                                </div>
-                              </div>
-                            </div>
-                            <div>
-                              <Label className="text-slate-700 font-medium">参照URL</Label>
-                              <div className="space-y-1 mt-2">
-                                {selectedItem.urls.map((url, index) => (
-                                  <div key={index} className="text-xs text-slate-600 break-all">
-                                    {url}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-
-                        <Card className="border-slate-200">
-                          <CardHeader>
-                            <CardTitle className="text-slate-800">アクション</CardTitle>
-                          </CardHeader>
-                          <CardContent className="p-6 space-y-3">
-                            <Button 
-                              className="w-full bg-transparent" 
-                              variant="outline"
-                              onClick={() => {
-                                if (selectedItem.fullAnalysisResult) {
-                                  const reportData = {
-                                    ...selectedItem.fullAnalysisResult,
-                                    historyId: selectedItem.id,
-                                    analysisDate: selectedItem.date
-                                  };
-                                  const element = document.createElement('a');
-                                  const file = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
-                                  element.href = URL.createObjectURL(file);
-                                  element.download = `ripre-analysis-${selectedItem.id}.json`;
-                                  document.body.appendChild(element);
-                                  element.click();
-                                  document.body.removeChild(element);
-                                }
-                              }}
-                            >
-                              <Download className="h-4 w-4 mr-2" />
-                              詳細レポートをダウンロード
-                            </Button>
-                            <Button 
-                              className="w-full bg-transparent" 
-                              variant="outline"
-                              onClick={() => {
-                                if (selectedItem.fullAnalysisResult) {
-                                  // 履歴の分析結果を現在の結果として設定
-                                  setAnalysisResult(selectedItem.fullAnalysisResult);
-                                  setActiveTab("results");
-                                }
-                              }}
-                            >
-                              <BarChart3 className="h-4 w-4 mr-2" />
-                              詳細結果を表示
-                            </Button>
-                            <Button 
-                              className="w-full bg-transparent" 
-                              variant="outline"
-                              onClick={() => {
-                                if (selectedItem.fullAnalysisResult?.originalDocuments) {
-                                  // 原稿を復元してチェックタブに移動
-                                  setFormData(prev => ({
-                                    ...prev,
-                                    documents: selectedItem.fullAnalysisResult.originalDocuments,
-                                    officialUrl1: selectedItem.fullAnalysisResult.officialUrls?.[0] || "",
-                                    officialUrl2: selectedItem.fullAnalysisResult.officialUrls?.[1] || "",
-                                    officialUrl3: selectedItem.fullAnalysisResult.officialUrls?.[2] || "",
-                                    officialUrl4: selectedItem.fullAnalysisResult.officialUrls?.[3] || "",
-                                    officialUrl5: selectedItem.fullAnalysisResult.officialUrls?.[4] || "",
-                                  }));
-                                  setActiveTab("check");
-                                }
-                              }}
-                            >
-                              <FileText className="h-4 w-4 mr-2" />
-                              原稿を複製して新規チェック
-                            </Button>
-                          </CardContent>
-                        </Card>
-                      </>
-                    )
-                  })()
-                ) : (
-                  <Card className="border-slate-200">
-                    <CardContent className="p-12 text-center">
-                      <Clock className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-slate-700 mb-2">履歴項目を選択</h3>
-                      <p className="text-slate-500">左側のリストから項目をクリックして詳細を確認してください。</p>
-                    </CardContent>
-                  </Card>
-                )}
               </div>
             </div>
           </TabsContent>

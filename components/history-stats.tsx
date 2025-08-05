@@ -15,6 +15,11 @@ interface HistoryStatsProps {
 }
 
 export function HistoryStats({ historyData }: HistoryStatsProps) {
+  // 【最重要修正点】historyDataが存在しない、または空の場合は何も表示しない
+  if (!historyData || historyData.length === 0) {
+    return null; // またはローディング表示などをここに書くことも可能
+  }
+
   const averageScore = Math.round(historyData.reduce((sum, item) => sum + item.score, 0) / historyData.length)
   const totalIssues = historyData.reduce((sum, item) => sum + item.issues, 0)
   const highScoreCount = historyData.filter((item) => item.score >= 80).length
