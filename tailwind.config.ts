@@ -90,11 +90,38 @@ const config: Config = {
   				"0%": { transform: "scale(.8)", opacity: "1" },
   				"100%": { transform: "scale(2.4)", opacity: "0" },
   			},
+  			"scan": {
+  				"0%": { transform: "translateY(-100%)", opacity: "0.8" },
+  				"50%": { opacity: "1" },
+  				"100%": { transform: "translateY(100%)", opacity: "0.8" },
+  			},
+  			"radar": {
+  				"0%": { transform: "rotate(0deg)" },
+  				"100%": { transform: "rotate(360deg)" },
+  			},
+  			"checkmark": {
+  				"0%": { transform: "scale(0)", opacity: "0" },
+  				"50%": { transform: "scale(1.2)", opacity: "1" },
+  				"100%": { transform: "scale(1)", opacity: "1" },
+  			},
+  			"document-float": {
+  				"0%, 100%": { transform: "translateY(0px)" },
+  				"50%": { transform: "translateY(-10px)" },
+  			},
+  			"glow-pulse": {
+  				"0%, 100%": { boxShadow: "0 0 20px rgba(56, 189, 248, 0.3)" },
+  				"50%": { boxShadow: "0 0 40px rgba(56, 189, 248, 0.6)" },
+  			},
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
   			'accordion-up': 'accordion-up 0.2s ease-out',
   			"ripple": "ripple 3s cubic-bezier(0, 0.2, 0.8, 1) infinite",
+  			"scan": "scan 2s ease-in-out infinite",
+  			"radar": "radar 3s linear infinite",
+  			"checkmark": "checkmark 0.6s ease-out",
+  			"document-float": "document-float 3s ease-in-out infinite",
+  			"glow-pulse": "glow-pulse 2s ease-in-out infinite",
   		}
   	}
   },

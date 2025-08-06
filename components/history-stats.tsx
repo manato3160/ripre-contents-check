@@ -4,14 +4,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle, BarChart3, Calendar } from "lucide-react"
 
+interface HistoryItem {
+  id: string;
+  created_at: string;
+  title: string;
+  score: number;
+  issues: any[];
+  summary: string;
+  user_rating: string | null;
+  human_issue_count: number | null;
+  raw_output: string;
+}
+
 interface HistoryStatsProps {
-  historyData: Array<{
-    id: string
-    date: string
-    score: number
-    issues: number
-    status: string
-  }>
+  historyData: HistoryItem[]
 }
 
 export function HistoryStats({ historyData }: HistoryStatsProps) {
@@ -21,7 +27,7 @@ export function HistoryStats({ historyData }: HistoryStatsProps) {
   }
 
   const averageScore = Math.round(historyData.reduce((sum, item) => sum + item.score, 0) / historyData.length)
-  const totalIssues = historyData.reduce((sum, item) => sum + item.issues, 0)
+  const totalIssues = historyData.reduce((sum, item) => sum + (Array.isArray(item.issues) ? item.issues.length : 0), 0)
   const highScoreCount = historyData.filter((item) => item.score >= 80).length
   const lowScoreCount = historyData.filter((item) => item.score < 60).length
 

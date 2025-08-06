@@ -5,7 +5,7 @@ import AuthSessionProvider from '@/components/session-provider'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'v0 App',
+  title: 'Ripre告知文チェック',
   description: 'Created with v0',
   generator: 'v0.dev',
 }

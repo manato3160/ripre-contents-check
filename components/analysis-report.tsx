@@ -36,8 +36,10 @@ const InteractiveTable = ({ children }: { children?: React.ReactNode }) => {
 
   const { registerTable, onCheckChange, checkedState, validationActive } = context;
 
-  const tableBody = React.Children.toArray(children).find((child: any) => child.type === 'tbody') as React.ReactElement;
-  const rowCount = React.Children.count(tableBody?.props?.children);
+  const tableBody = React.Children.toArray(children || []).find((child: any) => child?.type === 'tbody') as React.ReactElement;
+  const rowCount = tableBody && (tableBody.props as any)?.children 
+    ? React.Children.count((tableBody.props as any).children) 
+    : 0;
 
   React.useEffect(() => {
     if (rowCount > 0) {
