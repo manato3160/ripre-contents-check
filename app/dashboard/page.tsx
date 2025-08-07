@@ -49,8 +49,11 @@ import {
 } from "lucide-react"
 
 import { AnalysisReport } from "@/components/analysis-report"
+import { AnalyticsDashboard } from "@/components/analytics-dashboard"
+import { LoginTracker } from "@/components/login-tracker"
 import { Toaster } from "sonner"
 import { cn, getAiIssueCountFromReport } from "@/lib/utils"
+import { useAdmin } from "@/hooks/useAdmin"
 
 // --- ここから追加 ---
 interface HistoryItem {
@@ -90,14 +93,23 @@ interface AnalysisResult {
 
 export default function RipreDashboard() {
   const { session, isLoading, isAuthenticated, status } = useAuth()
+  const { isAdmin, isLoading: adminLoading } = useAdmin()
 
   // デバッグ用ログ
   useEffect(() => {
     console.log('Dashboard render - isLoading:', isLoading, 'isAuthenticated:', isAuthenticated, 'status:', status)
-  }, [isLoading, isAuthenticated, status])
+    console.log('Dashboard render - isAdmin:', isAdmin, 'adminLoading:', adminLoading)
+  }, [isLoading, isAuthenticated, status, isAdmin, adminLoading])
 
   // すべてのstateを最初に宣言
   const [activeTab, setActiveTab] = useState("reports")
+
+  // 管理者権限がない場合にアナリティクスタブが選択されないようにする
+  useEffect(() => {
+    if (activeTab === "analytics" && !isAdmin) {
+      setActiveTab("reports")
+    }
+  }, [activeTab, isAdmin])
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [progress, setProgress] = useState(0)
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
@@ -767,6 +779,8 @@ ${errorMessage}
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {/* ログイン履歴トラッカー */}
+      <LoginTracker />
 
       {/* Header */}
       <header className="bg-slate-900 text-white shadow-lg">
@@ -944,15 +958,17 @@ ${errorMessage}
 
       <div className="container mx-auto px-6 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 bg-white border border-slate-200">
+          <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-3' : 'grid-cols-2'} bg-white border border-slate-200`}>
             <TabsTrigger value="reports" className="data-[state=active]:bg-slate-900 data-[state=active]:text-white">
               <FileText className="h-4 w-4 mr-2" />
               レポート一覧
             </TabsTrigger>
-            <TabsTrigger value="analytics" className="data-[state=active]:bg-slate-900 data-[state=active]:text-white">
-              <BarChart3 className="h-4 w-4 mr-2" />
-              アナリティクス
-            </TabsTrigger>
+            {isAdmin && (
+              <TabsTrigger value="analytics" className="data-[state=active]:bg-slate-900 data-[state=active]:text-white">
+                <BarChart3 className="h-4 w-4 mr-2" />
+                アナリティクス
+              </TabsTrigger>
+            )}
             <TabsTrigger value="analyze" className="data-[state=active]:bg-slate-900 data-[state=active]:text-white">
               <Shield className="h-4 w-4 mr-2" />
               審査する
@@ -1263,23 +1279,11 @@ ${errorMessage}
             </div>
           </TabsContent>
 
-          <TabsContent value="analytics" className="space-y-6">
-            {/* アナリティクス - 準備中 */}
-            <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-              <Card className="border-slate-200 max-w-md w-full">
-                <CardContent className="p-12 text-center">
-                  <div className="bg-slate-100 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center">
-                    <BarChart3 className="h-12 w-12 text-slate-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-slate-900 mb-2">アナリティクス機能</h3>
-                  <p className="text-slate-600 mb-4">こちらの機能は準備中です</p>
-                  <p className="text-sm text-slate-500">
-                    審査データの統計分析、トレンド分析、パフォーマンス指標などの機能を準備中です。
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
+          {isAdmin && (
+            <TabsContent value="analytics" className="space-y-6">
+              <AnalyticsDashboard />
+            </TabsContent>
+          )}
 
 
 

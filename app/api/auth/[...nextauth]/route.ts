@@ -18,6 +18,10 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       return session
     },
+    async signIn({ user, account, profile }) {
+      // ログイン成功時の処理
+      return true
+    },
   },
   pages: {
     signIn: '/login',
