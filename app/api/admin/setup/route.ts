@@ -19,6 +19,14 @@ export async function POST(request: NextRequest) {
     const { email } = await request.json()
     const targetEmail = email || session.user.email
 
+    // まず既存の管理者がいるかチェック
+    const { data: existingAdmins, error: checkError } = await supabase
+      .from('admin_users')
+      .select('user_email')
+      .eq('is_admin', true)
+
+    console.log('Existing admins check:', { existingAdmins, checkError })
+
     // 管理者ユーザーを追加
     const { data, error } = await supabase
       .from('admin_users')
@@ -33,9 +41,17 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('Admin setup error:', error)
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      })
       return NextResponse.json({ 
-        error: 'テーブルが存在しない可能性があります。Supabaseでスキーマを作成してください。',
-        details: error.message 
+        error: `データベースエラー: ${error.message}`,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
       }, { status: 500 })
     }
 

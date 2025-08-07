@@ -28,6 +28,9 @@ import {
   Calendar,
   RefreshCw
 } from 'lucide-react'
+import { AdminSetupDialog } from './admin-setup-dialog'
+import { UserManagement } from './user-management'
+import { Toaster } from 'sonner'
 
 interface AnalyticsData {
   users: {
@@ -128,9 +131,7 @@ export function AnalyticsDashboard() {
             再試行
           </Button>
           {error.includes('管理者権限') && (
-            <Button asChild variant="default">
-              <a href="/admin-setup">管理者権限を設定</a>
-            </Button>
+            <AdminSetupDialog onAdminSetup={fetchAnalytics} />
           )}
         </div>
       </div>
@@ -143,6 +144,7 @@ export function AnalyticsDashboard() {
 
   return (
     <div className="space-y-6">
+      <Toaster />
       {/* 概要カード */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
@@ -199,15 +201,16 @@ export function AnalyticsDashboard() {
       </div>
 
       {/* 詳細タブ */}
-      <Tabs defaultValue="users" className="space-y-4">
+      <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
+          <TabsTrigger value="overview">概要</TabsTrigger>
           <TabsTrigger value="users">ユーザー管理</TabsTrigger>
           <TabsTrigger value="reports">レポート統計</TabsTrigger>
           <TabsTrigger value="logins">ログイン履歴</TabsTrigger>
           <TabsTrigger value="usage">使用統計</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="users" className="space-y-4">
+        <TabsContent value="overview" className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* ユーザー別レポート数グラフ */}
             <Card>
@@ -259,6 +262,10 @@ export function AnalyticsDashboard() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="users" className="space-y-4">
+          <UserManagement />
         </TabsContent>
 
         <TabsContent value="reports" className="space-y-4">

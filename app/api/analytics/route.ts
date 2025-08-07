@@ -10,16 +10,24 @@ const supabase = createClient(
 
 // 管理者権限チェック
 async function checkAdminPermission(userEmail: string) {
-  const { data, error } = await supabase
-    .from('admin_users')
-    .select('is_admin')
-    .eq('user_email', userEmail)
-    .single()
+  try {
+    const { data, error } = await supabase
+      .from('admin_users')
+      .select('is_admin')
+      .eq('user_email', userEmail)
+      .single()
 
-  if (error || !data?.is_admin) {
+    if (error) {
+      console.error('Admin permission check error:', error)
+      // テーブルが存在しない場合は false を返す
+      return false
+    }
+
+    return data?.is_admin || false
+  } catch (error) {
+    console.error('Admin permission check exception:', error)
     return false
   }
-  return true
 }
 
 export async function GET(request: NextRequest) {
@@ -65,7 +73,15 @@ async function getUserAnalytics() {
     .order('created_at', { ascending: false })
 
   if (userError) {
-    throw new Error('ユーザー統計の取得に失敗しました')
+    console.error('User analytics error:', userError)
+    // データが存在しない場合は空のデータを返す
+    if (userError.code === '42P01') {
+      return NextResponse.json({
+        totalUsers: 0,
+        userReportCounts: []
+      })
+    }
+    throw new Error(`ユーザー統計の取得に失敗しました: ${userError.message}`)
   }
 
   // ユーザーごとのレポート数
@@ -100,7 +116,14 @@ async function getReportAnalytics() {
     .order('created_at', { ascending: false })
 
   if (dailyError) {
-    throw new Error('レポート統計の取得に失敗しました')
+    console.error('Report analytics error:', dailyError)
+    if (dailyError.code === '42P01') {
+      return NextResponse.json({
+        totalReports: 0,
+        dailyReports: []
+      })
+    }
+    throw new Error(`レポート統計の取得に失敗しました: ${dailyError.message}`)
   }
 
   // 日別集計
@@ -130,7 +153,14 @@ async function getLoginAnalytics() {
     .limit(1000)
 
   if (loginError) {
-    throw new Error('ログイン統計の取得に失敗しました')
+    console.error('Login analytics error:', loginError)
+    if (loginError.code === '42P01') {
+      return NextResponse.json({
+        totalLogins: 0,
+        dailyLogins: []
+      })
+    }
+    throw new Error(`ログイン統計の取得に失敗しました: ${loginError.message}`)
   }
 
   // 日別ログイン数
@@ -165,7 +195,14 @@ async function getUsageAnalytics() {
     .order('created_at', { ascending: false })
 
   if (usageError) {
-    throw new Error('使用統計の取得に失敗しました')
+    console.error('Usage analytics error:', usageError)
+    if (usageError.code === '42P01') {
+      return NextResponse.json({
+        totalUsage: 0,
+        userUsage: []
+      })
+    }
+    throw new Error(`使用統計の取得に失敗しました: ${usageError.message}`)
   }
 
   // ユーザー別使用回数
@@ -196,17 +233,28 @@ async function getUsageAnalytics() {
 }
 
 async function getAllAnalytics() {
-  const [users, reports, logins, usage] = await Promise.all([
-    getUserAnalytics().then(res => res.json()),
-    getReportAnalytics().then(res => res.json()),
-    getLoginAnalytics().then(res => res.json()),
-    getUsageAnalytics().then(res => res.json())
-  ])
+  try {
+    const [users, reports, logins, usage] = await Promise.all([
+      getUserAnalytics().then(res => res.json()).catch(err => ({ totalUsers: 0, userReportCounts: [] })),
+      getReportAnalytics().then(res => res.json()).catch(err => ({ totalReports: 0, dailyReports: [] })),
+      getLoginAnalytics().then(res => res.json()).catch(err => ({ totalLogins: 0, dailyLogins: [] })),
+      getUsageAnalytics().then(res => res.json()).catch(err => ({ totalUsage: 0, userUsage: [] }))
+    ])
 
-  return NextResponse.json({
-    users,
-    reports,
-    logins,
-    usage
-  })
+    return NextResponse.json({
+      users,
+      reports,
+      logins,
+      usage
+    })
+  } catch (error) {
+    console.error('Get all analytics error:', error)
+    // フォールバック: 空のデータを返す
+    return NextResponse.json({
+      users: { totalUsers: 0, userReportCounts: [] },
+      reports: { totalReports: 0, dailyReports: [] },
+      logins: { totalLogins: 0, dailyLogins: [] },
+      usage: { totalUsage: 0, userUsage: [] }
+    })
+  }
 }

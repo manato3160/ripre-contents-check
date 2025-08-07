@@ -25,7 +25,12 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Admin check error:', error)
-      return NextResponse.json({ isAdmin: false })
+      // テーブルが存在しない場合やその他のエラーの場合は false を返す
+      return NextResponse.json({ 
+        isAdmin: false, 
+        error: error.message,
+        needsSetup: error.code === 'PGRST116' // テーブルが存在しない
+      })
     }
 
     return NextResponse.json({ isAdmin: data?.is_admin || false })
