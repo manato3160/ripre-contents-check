@@ -18,9 +18,10 @@ import { Shield, CheckCircle, AlertCircle } from 'lucide-react'
 
 interface AdminSetupDialogProps {
   onAdminSetup?: () => void
+  onAdminStatusChange?: () => void
 }
 
-export function AdminSetupDialog({ onAdminSetup }: AdminSetupDialogProps) {
+export function AdminSetupDialog({ onAdminSetup, onAdminStatusChange }: AdminSetupDialogProps) {
   const { session } = useAuth()
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
@@ -47,6 +48,7 @@ export function AdminSetupDialog({ onAdminSetup }: AdminSetupDialogProps) {
         setTimeout(() => {
           setOpen(false)
           onAdminSetup?.()
+          onAdminStatusChange?.()
         }, 2000)
       } else {
         setResult({ success: false, message: data.error || 'エラーが発生しました' })

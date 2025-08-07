@@ -35,17 +35,49 @@ export async function POST(request: NextRequest) {
       console.error('Login history insert error:', loginError)
     }
 
-    // ユーザー情報テーブルも更新（存在しない場合は作成）
-    const { error: userError } = await supabase
+    // 既存のユーザー情報をチェック
+    const { data: existingUser, error: checkError } = await supabase
       .from('admin_users')
-      .upsert({
-        user_email: session.user.email,
-        user_name: session.user.name || 'Unknown',
-        is_admin: false // デフォルトは一般ユーザー
-      }, {
-        onConflict: 'user_email',
-        ignoreDuplicates: false
-      })
+      .select('is_admin')
+      .eq('user_email', session.user.email)
+      .single()
+
+    // 新規ユーザーの場合のみ追加（既存ユーザーの権限は保持）
+    if (checkError && checkError.code === 'PGRST116') {
+      // ユーザーが存在しない場合のみ新規作成
+      console.log('Creating new user:', session.user.email)
+      const { error: userError } = await supabase
+        .from('admin_users')
+        .insert({
+          user_email: session.user.email,
+          user_name: session.user.name || 'Unknown',
+          is_admin: false // デフォルトは一般ユーザー
+        })
+
+      if (userError) {
+        console.error('User info insert error:', userError)
+      } else {
+        console.log('New user created successfully')
+      }
+    } else if (!checkError) {
+      // 既存ユーザーの場合は名前のみ更新（権限は保持）
+      console.log('Updating existing user name:', session.user.email, 'is_admin:', existingUser?.is_admin)
+      const { error: updateError } = await supabase
+        .from('admin_users')
+        .update({
+          user_name: session.user.name || 'Unknown',
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_email', session.user.email)
+
+      if (updateError) {
+        console.error('User info update error:', updateError)
+      } else {
+        console.log('User name updated successfully, admin status preserved')
+      }
+    } else {
+      console.error('Unexpected error checking user:', checkError)
+    }
 
     if (userError) {
       console.error('User info upsert error:', userError)

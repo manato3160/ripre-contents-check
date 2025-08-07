@@ -72,21 +72,43 @@ export async function POST(request: NextRequest) {
       // 各ユーザーをadmin_usersテーブルに同期
       for (const user of uniqueUsers.values()) {
         try {
-          const { error } = await supabase
+          // 既存ユーザーをチェック
+          const { data: existingUser, error: checkError } = await supabase
             .from('admin_users')
-            .upsert({
-              user_email: user.user_email,
-              user_name: user.user_name,
-              is_admin: false // デフォルトは一般ユーザー
-            }, {
-              onConflict: 'user_email',
-              ignoreDuplicates: true // 既存のレコードは更新しない
-            })
+            .select('is_admin')
+            .eq('user_email', user.user_email)
+            .single()
 
-          if (error) {
-            errors.push(`${user.user_email}: ${error.message}`)
-          } else {
-            syncedCount++
+          if (checkError && checkError.code === 'PGRST116') {
+            // 新規ユーザーの場合のみ追加
+            const { error } = await supabase
+              .from('admin_users')
+              .insert({
+                user_email: user.user_email,
+                user_name: user.user_name,
+                is_admin: false // デフォルトは一般ユーザー
+              })
+
+            if (error) {
+              errors.push(`${user.user_email}: ${error.message}`)
+            } else {
+              syncedCount++
+            }
+          } else if (!checkError) {
+            // 既存ユーザーの場合は名前のみ更新（権限は保持）
+            const { error } = await supabase
+              .from('admin_users')
+              .update({
+                user_name: user.user_name,
+                updated_at: new Date().toISOString()
+              })
+              .eq('user_email', user.user_email)
+
+            if (error) {
+              errors.push(`${user.user_email}: ${error.message}`)
+            } else {
+              syncedCount++
+            }
           }
         } catch (error) {
           errors.push(`${user.user_email}: ${error}`)

@@ -93,7 +93,7 @@ interface AnalysisResult {
 
 export default function RipreDashboard() {
   const { session, isLoading, isAuthenticated, status } = useAuth()
-  const { isAdmin, isLoading: adminLoading } = useAdmin()
+  const { isAdmin, isLoading: adminLoading, refreshAdminStatus } = useAdmin()
 
   // デバッグ用ログ
   useEffect(() => {

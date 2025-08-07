@@ -131,7 +131,10 @@ export function AnalyticsDashboard() {
             再試行
           </Button>
           {error.includes('管理者権限') && (
-            <AdminSetupDialog onAdminSetup={fetchAnalytics} />
+            <AdminSetupDialog 
+              onAdminSetup={fetchAnalytics} 
+              onAdminStatusChange={() => window.location.reload()} 
+            />
           )}
         </div>
       </div>
