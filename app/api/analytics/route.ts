@@ -96,6 +96,10 @@ async function getUserAnalytics() {
       }
     }
     acc[email].count++
+    // より新しい名前で更新（最新の名前を保持）
+    if (item.user_name && item.user_name !== 'Unknown') {
+      acc[email].name = item.user_name
+    }
     if (new Date(item.created_at) > new Date(acc[email].lastActivity)) {
       acc[email].lastActivity = item.created_at
     }
@@ -191,7 +195,7 @@ async function getUsageAnalytics() {
   // 審査機能使用統計
   const { data: usageStats, error: usageError } = await supabase
     .from('analysis_history')
-    .select('user_email, created_at, score, user_rating')
+    .select('user_email, user_name, created_at, score, user_rating')
     .order('created_at', { ascending: false })
 
   if (usageError) {
@@ -211,6 +215,7 @@ async function getUsageAnalytics() {
     if (!acc[email]) {
       acc[email] = {
         email,
+        name: item.user_name || 'Unknown',
         totalUsage: 0,
         avgScore: 0,
         totalScore: 0,

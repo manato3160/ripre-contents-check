@@ -131,10 +131,32 @@ export function AnalyticsDashboard() {
             再試行
           </Button>
           {error.includes('管理者権限') && (
-            <AdminSetupDialog 
-              onAdminSetup={fetchAnalytics} 
-              onAdminStatusChange={() => window.location.reload()} 
-            />
+            <>
+              <AdminSetupDialog 
+                onAdminSetup={fetchAnalytics} 
+                onAdminStatusChange={() => window.location.reload()} 
+              />
+              <Button 
+                onClick={async () => {
+                  try {
+                    const response = await fetch('/api/admin/restore', { method: 'POST' })
+                    const data = await response.json()
+                    if (response.ok) {
+                      alert(data.message)
+                      window.location.reload()
+                    } else {
+                      alert(data.error)
+                    }
+                  } catch (error) {
+                    alert('復旧に失敗しました')
+                  }
+                }}
+                variant="destructive"
+                size="sm"
+              >
+                緊急復旧
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -232,7 +254,15 @@ export function AnalyticsDashboard() {
                       height={80}
                     />
                     <YAxis />
-                    <Tooltip />
+                    <Tooltip 
+                      formatter={(value, name, props) => [value, 'レポート数']}
+                      labelFormatter={(label, payload) => {
+                        if (payload && payload[0]) {
+                          return `${payload[0].payload.name} (${payload[0].payload.email})`
+                        }
+                        return label
+                      }}
+                    />
                     <Bar dataKey="count" fill="#8884d8" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -388,13 +418,21 @@ export function AnalyticsDashboard() {
                   <BarChart data={data.usage.userUsage.slice(0, 10)}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis 
-                      dataKey="email" 
+                      dataKey="name" 
                       angle={-45}
                       textAnchor="end"
                       height={80}
                     />
                     <YAxis />
-                    <Tooltip />
+                    <Tooltip 
+                      formatter={(value, name, props) => [value, '使用回数']}
+                      labelFormatter={(label, payload) => {
+                        if (payload && payload[0]) {
+                          return `${payload[0].payload.name} (${payload[0].payload.email})`
+                        }
+                        return label
+                      }}
+                    />
                     <Bar dataKey="totalUsage" fill="#8884d8" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -412,7 +450,8 @@ export function AnalyticsDashboard() {
                   {data.usage.userUsage.map((user: any, index: number) => (
                     <div key={index} className="flex items-center justify-between p-2 border rounded">
                       <div>
-                        <p className="font-medium">{user.email}</p>
+                        <p className="font-medium">{user.name || 'Unknown'}</p>
+                        <p className="text-sm text-muted-foreground">{user.email}</p>
                         <p className="text-sm text-muted-foreground">
                           平均スコア: {user.avgScore}点
                         </p>

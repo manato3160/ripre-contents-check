@@ -36,11 +36,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 既存のユーザー情報をチェック
+    console.log('Checking user:', session.user.email)
     const { data: existingUser, error: checkError } = await supabase
       .from('admin_users')
-      .select('is_admin')
+      .select('is_admin, user_name')
       .eq('user_email', session.user.email)
       .single()
+
+    console.log('Existing user check result:', { existingUser, checkError })
 
     // 新規ユーザーの場合のみ追加（既存ユーザーの権限は保持）
     if (checkError && checkError.code === 'PGRST116') {
@@ -59,21 +62,27 @@ export async function POST(request: NextRequest) {
       } else {
         console.log('New user created successfully')
       }
-    } else if (!checkError) {
-      // 既存ユーザーの場合は名前のみ更新（権限は保持）
-      console.log('Updating existing user name:', session.user.email, 'is_admin:', existingUser?.is_admin)
-      const { error: updateError } = await supabase
-        .from('admin_users')
-        .update({
-          user_name: session.user.name || 'Unknown',
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_email', session.user.email)
+    } else if (!checkError && existingUser) {
+      // 既存ユーザーの場合は名前のみ更新（権限は絶対に保持）
+      console.log('Updating existing user name:', session.user.email, 'current is_admin:', existingUser.is_admin)
+      
+      // 名前が変更された場合のみ更新
+      if (existingUser.user_name !== session.user.name) {
+        const { error: updateError } = await supabase
+          .from('admin_users')
+          .update({
+            user_name: session.user.name || 'Unknown',
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_email', session.user.email)
 
-      if (updateError) {
-        console.error('User info update error:', updateError)
+        if (updateError) {
+          console.error('User info update error:', updateError)
+        } else {
+          console.log('User name updated successfully, admin status preserved:', existingUser.is_admin)
+        }
       } else {
-        console.log('User name updated successfully, admin status preserved')
+        console.log('No name update needed, admin status preserved:', existingUser.is_admin)
       }
     } else {
       console.error('Unexpected error checking user:', checkError)
