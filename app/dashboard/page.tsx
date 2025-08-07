@@ -43,6 +43,9 @@ import {
   User,
   GitCompareArrows,
   CheckCircle,
+  Edit2,
+  Check,
+  X,
 } from "lucide-react"
 
 import { AnalysisReport } from "@/components/analysis-report"
@@ -103,6 +106,10 @@ export default function RipreDashboard() {
   const [isRatingDialogOpen, setIsRatingDialogOpen] = useState(false);
   const [selectedRatingInDialog, setSelectedRatingInDialog] = useState<string>('A');
   const [humanIssueCountInDialog, setHumanIssueCountInDialog] = useState('');
+  const [isReportListRatingDialogOpen, setIsReportListRatingDialogOpen] = useState(false);
+  const [currentReportForRating, setCurrentReportForRating] = useState<string | null>(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editingTitle, setEditingTitle] = useState('');
   const [historyData, setHistoryData] = useState<HistoryItem[]>([]);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<string | null>(null)
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
@@ -169,12 +176,7 @@ export default function RipreDashboard() {
 
 
 
-  // 履歴データが変更されたときに最初のレポートを自動選択
-  useEffect(() => {
-    if (historyData.length > 0 && !selectedReportId) {
-      setSelectedReportId(historyData[0].id);
-    }
-  }, [historyData, selectedReportId])
+  // 自動選択を削除 - ユーザーが明示的に選択した場合のみ表示
 
   // AI指摘数をレポート内容から正確に計算
   const aiIssueCount = useMemo(() => {
@@ -477,6 +479,105 @@ ${errorMessage}
     }
   }
 
+  const handleTitleUpdate = async () => {
+    if (!selectedReportId || !editingTitle.trim()) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/history', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedReportId,
+          title: editingTitle.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('タイトルの更新に失敗しました');
+      }
+
+      // 履歴データの更新
+      setHistoryData(prev => prev.map(item =>
+        item.id === selectedReportId
+          ? { ...item, title: editingTitle.trim() }
+          : item
+      ));
+
+      setIsEditingTitle(false);
+    } catch (error) {
+      console.error('タイトル更新エラー:', error);
+      alert('タイトルの更新に失敗しました');
+    }
+  };
+
+  const handleTitleEditStart = () => {
+    const currentReport = historyData.find(item => item.id === selectedReportId);
+    if (currentReport) {
+      setEditingTitle(currentReport.title);
+      setIsEditingTitle(true);
+    }
+  };
+
+  const handleTitleEditCancel = () => {
+    setIsEditingTitle(false);
+    setEditingTitle('');
+  };
+
+  const handleReportListRatingSubmit = async () => {
+    const rating = selectedRatingInDialog;
+    const count = parseInt(humanIssueCountInDialog, 10);
+    const issueCount = isNaN(count) ? 0 : count;
+
+    if (!currentReportForRating) {
+      alert("評価対象のレポートが選択されていません。");
+      return;
+    }
+
+    const targetReport = historyData.find(item => item.id === currentReportForRating);
+    if (!targetReport) {
+      alert("評価対象のレポートが見つかりません。");
+      return;
+    }
+
+    try {
+      const requestBody = {
+        id: targetReport.id,
+        user_rating: rating,
+        human_issue_count: issueCount,
+      };
+
+      const response = await fetch('/api/history', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`評価の保存に失敗しました (${response.status}): ${errorText}`);
+      }
+
+      // 履歴データの更新
+      setHistoryData(prev => prev.map(item =>
+        item.id === currentReportForRating
+          ? { ...item, user_rating: rating, human_issue_count: issueCount }
+          : item
+      ));
+
+      alert('評価を保存しました。');
+    } catch (error) {
+      console.error("評価の保存エラー:", error);
+      alert('評価の保存中にエラーが発生しました。');
+    } finally {
+      setIsReportListRatingDialogOpen(false);
+      setCurrentReportForRating(null);
+      setSelectedRatingInDialog('A');
+      setHumanIssueCountInDialog('');
+    }
+  };
+
   const handleRatingSubmit = async () => {
     const rating = selectedRatingInDialog;
     const count = parseInt(humanIssueCountInDialog, 10);
@@ -774,6 +875,73 @@ ${errorMessage}
         </DialogContent>
       </Dialog>
 
+      {/* レポート一覧用評価ダイアログ */}
+      <Dialog open={isReportListRatingDialogOpen} onOpenChange={setIsReportListRatingDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>🎉 審査が完了しました！</DialogTitle>
+            <DialogDescription>
+              AIの審査精度向上のため、今回の結果について評価をお聞かせください。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="report-list-human-issue-count">人間による指摘数</Label>
+              <Input
+                id="report-list-human-issue-count"
+                type="number"
+                placeholder="人間が指摘した件数を入力"
+                value={humanIssueCountInDialog}
+                onChange={(e) => setHumanIssueCountInDialog(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>精度の評価</Label>
+              <RadioGroup
+                defaultValue="A"
+                className="grid grid-cols-5 gap-2 pt-2"
+                value={selectedRatingInDialog}
+                onValueChange={setSelectedRatingInDialog}
+              >
+                {['A', 'B', 'C', 'D', 'E'].map((rating) => (
+                  <div key={rating} className="flex flex-col items-center space-y-2">
+                    <RadioGroupItem value={rating} id={`report-list-rating-${rating}`} className="sr-only" />
+                    <Label
+                      htmlFor={`report-list-rating-${rating}`}
+                      className={cn(
+                        "flex items-center justify-center rounded-md border-2 border-muted bg-popover p-4 w-16 h-16 text-2xl font-bold hover:bg-accent hover:text-accent-foreground cursor-pointer",
+                        selectedRatingInDialog === rating && "border-slate-900"
+                      )}
+                    >
+                      {rating}
+                    </Label>
+                  </div>
+                ))}
+              </RadioGroup>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={handleReportListRatingSubmit}
+              className="bg-slate-900 hover:bg-slate-800"
+            >
+              評価を送信
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsReportListRatingDialogOpen(false);
+                setCurrentReportForRating(null);
+                setSelectedRatingInDialog('A');
+                setHumanIssueCountInDialog('');
+              }}
+            >
+              後で評価する
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="container mx-auto px-6 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-3 bg-white border border-slate-200">
@@ -894,12 +1062,61 @@ ${errorMessage}
               <div className="lg:col-span-2">
                 <Card className="border-slate-200 h-full">
                   <CardHeader className="bg-slate-800 text-white">
-                    <CardTitle className="flex items-center">
-                      <FileText className="h-5 w-5 mr-2" />
-                      {selectedReportId ?
-                        historyData.find(item => item.id === selectedReportId)?.title || "レポート詳細"
-                        : "レポート詳細"
-                      }
+                    <CardTitle className="flex items-center justify-between">
+                      <div className="flex items-center flex-1 min-w-0">
+                        <FileText className="h-5 w-5 mr-2 flex-shrink-0" />
+                        {selectedReportId ? (
+                          isEditingTitle ? (
+                            <div className="flex items-center flex-1 space-x-2">
+                              <Input
+                                value={editingTitle}
+                                onChange={(e) => setEditingTitle(e.target.value)}
+                                className="flex-1 text-white bg-slate-700 border-slate-600"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleTitleUpdate();
+                                  } else if (e.key === 'Escape') {
+                                    handleTitleEditCancel();
+                                  }
+                                }}
+                                autoFocus
+                              />
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={handleTitleUpdate}
+                                className="text-green-400 hover:text-green-300 hover:bg-slate-700"
+                              >
+                                <Check className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={handleTitleEditCancel}
+                                className="text-red-400 hover:text-red-300 hover:bg-slate-700"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center flex-1 min-w-0">
+                              <span className="truncate">
+                                {historyData.find(item => item.id === selectedReportId)?.title || "レポート詳細"}
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={handleTitleEditStart}
+                                className="ml-2 text-slate-400 hover:text-white hover:bg-slate-700 flex-shrink-0"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          )
+                        ) : (
+                          "レポート詳細"
+                        )}
+                      </div>
                     </CardTitle>
                     {selectedReportId && (
                       <CardDescription className="text-slate-300">
@@ -922,26 +1139,89 @@ ${errorMessage}
 
                           return (
                             <>
-                              {/* スコア表示 */}
-                              <div className="bg-slate-50 rounded-lg p-4">
-                                <div className="flex items-center justify-between mb-2">
-                                  <h3 className="text-lg font-semibold text-slate-900">審査精度</h3>
-                                  <div className={cn(
-                                    "text-2xl font-bold",
-                                    selectedReport.user_rating === 'A' ? "text-green-600" :
-                                      selectedReport.user_rating === 'B' ? "text-blue-600" :
-                                        selectedReport.user_rating === 'C' ? "text-yellow-600" :
-                                          selectedReport.user_rating === 'D' ? "text-orange-600" :
-                                            selectedReport.user_rating === 'E' ? "text-red-600" : "text-slate-400"
-                                  )}>
-                                    {selectedReport.user_rating || '-'}
+                              {/* 審査統計カード */}
+                              <Card className="border-slate-200">
+                                <CardHeader className="bg-slate-900 text-white">
+                                  <CardTitle className="flex items-center">
+                                    <BarChart3 className="h-5 w-5 mr-2" />
+                                    審査統計
+                                  </CardTitle>
+                                  <CardDescription className="text-slate-300">
+                                    AI指摘数と人間による評価の比較
+                                  </CardDescription>
+                                </CardHeader>
+                                <CardContent className="p-6">
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    {/* AI指摘数 */}
+                                    <div className="text-center">
+                                      <div className="bg-blue-50 rounded-lg p-4 mb-3">
+                                        <Bot className="h-8 w-8 text-blue-600 mx-auto mb-2" />
+                                        <div className="text-2xl font-bold text-blue-600">
+                                          {getAiIssueCountFromReport(selectedReport.raw_output)}
+                                        </div>
+                                        <div className="text-sm text-blue-600 font-medium">AI指摘数</div>
+                                      </div>
+                                      <p className="text-xs text-slate-500">AIが検出した問題点の数</p>
+                                    </div>
+
+                                    {/* 人間による指摘数 */}
+                                    <div className="text-center">
+                                      <div className="bg-green-50 rounded-lg p-4 mb-3">
+                                        <User className="h-8 w-8 text-green-600 mx-auto mb-2" />
+                                        <div className="text-2xl font-bold text-green-600">
+                                          {selectedReport.human_issue_count !== null ? selectedReport.human_issue_count : '-'}
+                                        </div>
+                                        <div className="text-sm text-green-600 font-medium">人間による指摘数</div>
+                                      </div>
+                                      <p className="text-xs text-slate-500">
+                                        {selectedReport.human_issue_count !== null ? '人間が実際に指摘した問題点の数' : '評価待ち'}
+                                      </p>
+                                    </div>
+
+                                    {/* 審査精度 */}
+                                    <div className="text-center">
+                                      <div className="bg-purple-50 rounded-lg p-4 mb-3">
+                                        <Star className="h-8 w-8 text-purple-600 mx-auto mb-2" />
+                                        <div className={cn(
+                                          "text-2xl font-bold",
+                                          selectedReport.user_rating === 'A' ? "text-green-600" :
+                                            selectedReport.user_rating === 'B' ? "text-blue-600" :
+                                              selectedReport.user_rating === 'C' ? "text-yellow-600" :
+                                                selectedReport.user_rating === 'D' ? "text-orange-600" :
+                                                  selectedReport.user_rating === 'E' ? "text-red-600" : "text-purple-600"
+                                        )}>
+                                          {selectedReport.user_rating || '-'}
+                                        </div>
+                                        <div className="text-sm text-purple-600 font-medium">審査精度</div>
+                                      </div>
+                                      <p className="text-xs text-slate-500">
+                                        {selectedReport.user_rating ? 'A(最高) - E(最低)' : '評価待ち'}
+                                      </p>
+                                    </div>
                                   </div>
-                                </div>
-                                <Progress
-                                  value={selectedReport.score}
-                                  className="h-2"
-                                />
-                              </div>
+
+                                  {/* 評価ボタン */}
+                                  {(!selectedReport.user_rating || selectedReport.human_issue_count === null) && (
+                                    <div className="mt-6 pt-6 border-t border-slate-200">
+                                      <div className="text-center">
+                                        <p className="text-sm text-slate-600 mb-4">
+                                          AIの精度向上のため、審査結果の評価をお願いします
+                                        </p>
+                                        <Button
+                                          onClick={() => {
+                                            setCurrentReportForRating(selectedReport.id);
+                                            setIsReportListRatingDialogOpen(true);
+                                          }}
+                                          className="bg-slate-900 hover:bg-slate-800"
+                                        >
+                                          <Star className="h-4 w-4 mr-2" />
+                                          審査結果を評価する
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </CardContent>
+                              </Card>
 
                               {/* サマリー */}
                               <div>
@@ -955,7 +1235,13 @@ ${errorMessage}
                               <div>
                                 <h3 className="text-lg font-semibold text-slate-900 mb-3">詳細レポート</h3>
                                 <div className="bg-white border border-slate-200 rounded-lg">
-                                  <AnalysisReport content={selectedReport.raw_output} />
+                                  <AnalysisReport
+                                    content={selectedReport.raw_output}
+                                    onCheckCompleted={() => {
+                                      setCurrentReportForRating(selectedReport.id);
+                                      setIsReportListRatingDialogOpen(true);
+                                    }}
+                                  />
                                 </div>
                               </div>
                             </>
@@ -963,10 +1249,10 @@ ${errorMessage}
                         })()}
                       </div>
                     ) : (
-                      <div className="flex items-center justify-center h-full text-slate-500">
+                      <div className="flex justify-center pt-16 h-full text-slate-500">
                         <div className="text-center">
                           <FileText className="h-16 w-16 mx-auto mb-4 text-slate-300" />
-                          <p className="text-lg font-medium">レポートを選択してください</p>
+                          <p className="text-lg font-medium">レポートを選択するとここに表示されます</p>
                           <p className="text-sm">左側のリストからレポートを選択すると詳細が表示されます</p>
                         </div>
                       </div>
@@ -1079,6 +1365,7 @@ ${errorMessage}
                 <div className="space-y-6">
                   <AnalysisReport
                     content={analysisResult.rawOutput || ""}
+                    onCheckCompleted={() => setIsRatingDialogOpen(true)}
                   />
 
                   {/* 新しい審査を開始ボタン - 最下部に配置 */}

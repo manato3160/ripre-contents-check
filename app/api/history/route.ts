@@ -119,19 +119,27 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { id, user_rating, human_issue_count } = body
+    const { id, user_rating, human_issue_count, title } = body
 
     if (!id) {
       return NextResponse.json({ error: 'IDが必要です' }, { status: 400 })
     }
 
+    // 更新するフィールドを動的に構築
+    const updateFields: any = {}
+    if (user_rating !== undefined) updateFields.user_rating = user_rating
+    if (human_issue_count !== undefined) updateFields.human_issue_count = human_issue_count
+    if (title !== undefined) updateFields.title = title
+
+    // 更新するフィールドがない場合はエラー
+    if (Object.keys(updateFields).length === 0) {
+      return NextResponse.json({ error: '更新するフィールドが指定されていません' }, { status: 400 })
+    }
+
     // ユーザー自身の履歴のみ更新可能
     const { data, error } = await supabase
       .from('analysis_history')
-      .update({
-        user_rating,
-        human_issue_count
-      })
+      .update(updateFields)
       .eq('id', id)
       .eq('user_email', session.user.email) // ユーザー認証チェック
       .select()
