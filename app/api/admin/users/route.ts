@@ -44,71 +44,57 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
     }
 
-    // 全ユーザーの取得（analysis_historyから）
-    const { data: historyUsers, error: historyError } = await supabase
-      .from('analysis_history')
-      .select('user_email, user_name, created_at')
-      .order('created_at', { ascending: false })
-
-    // 管理者ユーザーの取得
+    // 管理者ユーザーの取得（メインソース）
     const { data: adminUsers, error: adminError } = await supabase
       .from('admin_users')
       .select('*')
-      .order('created_at', { ascending: false })
-
-    if (historyError && historyError.code !== '42P01') {
-      console.error('History users fetch error:', historyError)
-    }
+      .order('updated_at', { ascending: false })
 
     if (adminError) {
       console.error('Admin users fetch error:', adminError)
       return NextResponse.json({ error: 'ユーザー情報の取得に失敗しました' }, { status: 500 })
     }
 
-    // ユーザー情報をマージ
-    const allUsers = new Map()
+    // レポート数を取得（analysis_historyから）
+    const { data: reportCounts, error: reportError } = await supabase
+      .from('analysis_history')
+      .select('user_email, created_at')
+      .order('created_at', { ascending: false })
 
-    // analysis_historyからユーザーを追加
-    if (historyUsers) {
-      historyUsers.forEach((user: any) => {
-        if (!allUsers.has(user.user_email)) {
-          allUsers.set(user.user_email, {
-            email: user.user_email,
-            name: user.user_name || 'Unknown',
-            isAdmin: false,
-            lastActivity: user.created_at,
-            reportCount: 0,
-            hasAdminRecord: false
-          })
-        }
-        allUsers.get(user.user_email).reportCount++
-        if (new Date(user.created_at) > new Date(allUsers.get(user.user_email).lastActivity)) {
-          allUsers.get(user.user_email).lastActivity = user.created_at
+    if (reportError && reportError.code !== '42P01') {
+      console.error('Report counts fetch error:', reportError)
+    }
+
+    // レポート数を集計
+    const reportCountMap = new Map()
+    const lastActivityMap = new Map()
+    
+    if (reportCounts) {
+      reportCounts.forEach((report: any) => {
+        const email = report.user_email
+        reportCountMap.set(email, (reportCountMap.get(email) || 0) + 1)
+        
+        if (!lastActivityMap.has(email) || 
+            new Date(report.created_at) > new Date(lastActivityMap.get(email))) {
+          lastActivityMap.set(email, report.created_at)
         }
       })
     }
 
-    // admin_usersからユーザーを追加/更新
-    adminUsers.forEach((admin: any) => {
-      if (allUsers.has(admin.user_email)) {
-        allUsers.get(admin.user_email).isAdmin = admin.is_admin
-        allUsers.get(admin.user_email).hasAdminRecord = true
-        allUsers.get(admin.user_email).adminId = admin.id
-      } else {
-        allUsers.set(admin.user_email, {
-          email: admin.user_email,
-          name: admin.user_name || 'Unknown',
-          isAdmin: admin.is_admin,
-          lastActivity: admin.created_at,
-          reportCount: 0,
-          hasAdminRecord: true,
-          adminId: admin.id
-        })
-      }
-    })
+    // ユーザー情報をマージ
+    const allUsers = adminUsers.map((admin: any) => ({
+      email: admin.user_email,
+      name: admin.user_name || 'Unknown',
+      isAdmin: admin.is_admin,
+      lastActivity: lastActivityMap.get(admin.user_email) || admin.updated_at,
+      reportCount: reportCountMap.get(admin.user_email) || 0,
+      hasAdminRecord: true,
+      adminId: admin.id,
+      createdAt: admin.created_at
+    }))
 
     return NextResponse.json({
-      users: Array.from(allUsers.values()).sort((a, b) => 
+      users: allUsers.sort((a, b) => 
         new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
       )
     })

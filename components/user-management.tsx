@@ -93,6 +93,11 @@ export function UserManagement() {
 
   useEffect(() => {
     fetchUsers()
+    
+    // 30秒ごとに自動更新
+    const interval = setInterval(fetchUsers, 30000)
+    
+    return () => clearInterval(interval)
   }, [])
 
   const handleAddUser = async () => {
@@ -185,6 +190,31 @@ export function UserManagement() {
     }
   }
 
+  const handleSyncUsers = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch('/api/admin/sync-users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        toast.success(data.message)
+        fetchUsers()
+      } else {
+        toast.error(data.error || 'ユーザー同期に失敗しました')
+      }
+    } catch (error) {
+      toast.error('ネットワークエラーが発生しました')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -218,6 +248,10 @@ export function UserManagement() {
           <Button onClick={fetchUsers} variant="outline" size="sm">
             <RefreshCw className="w-4 h-4 mr-2" />
             更新
+          </Button>
+          <Button onClick={handleSyncUsers} variant="outline" size="sm" disabled={loading}>
+            <Users className="w-4 h-4 mr-2" />
+            ユーザー同期
           </Button>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>

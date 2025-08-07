@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     const ipAddress = forwarded?.split(',')[0] || realIp || '127.0.0.1'
 
     // ログイン履歴を記録
-    const { error } = await supabase
+    const { error: loginError } = await supabase
       .from('login_history')
       .insert({
         user_email: session.user.email,
@@ -31,9 +31,24 @@ export async function POST(request: NextRequest) {
         ip_address: ipAddress
       })
 
-    if (error) {
-      console.error('Login history insert error:', error)
-      // ログイン履歴の記録に失敗してもログイン自体は成功させる
+    if (loginError) {
+      console.error('Login history insert error:', loginError)
+    }
+
+    // ユーザー情報テーブルも更新（存在しない場合は作成）
+    const { error: userError } = await supabase
+      .from('admin_users')
+      .upsert({
+        user_email: session.user.email,
+        user_name: session.user.name || 'Unknown',
+        is_admin: false // デフォルトは一般ユーザー
+      }, {
+        onConflict: 'user_email',
+        ignoreDuplicates: false
+      })
+
+    if (userError) {
+      console.error('User info upsert error:', userError)
     }
 
     return NextResponse.json({ success: true })
